@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: execucao-service
+
+aws:
+  region: ${AWS_REGION:us-east-1}
+
+dynamodb:
+  table-name: ${DYNAMODB_TABLE_NAME:execucao_service}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
