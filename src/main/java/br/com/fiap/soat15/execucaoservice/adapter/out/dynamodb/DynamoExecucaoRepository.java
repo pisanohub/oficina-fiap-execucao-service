@@ -1,6 +1,10 @@
 package br.com.fiap.soat15.execucaoservice.adapter.out.dynamodb;
 
 import br.com.fiap.soat15.execucaoservice.application.DiagnosticoNaoEncontradoException;
+import br.com.fiap.soat15.execucaoservice.application.ExecucaoJaAgendadaException;
+import br.com.fiap.soat15.execucaoservice.application.PecaIndisponivelException;
+import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
+import br.com.fiap.soat15.execucaoservice.domain.model.AgendamentoExecucao;
 import br.com.fiap.soat15.execucaoservice.application.ExecucaoRepository;
 import br.com.fiap.soat15.execucaoservice.application.ItemCatalogoExistenteException;
 import br.com.fiap.soat15.execucaoservice.application.VersaoDiagnosticoConflitanteException;
@@ -17,6 +21,12 @@ import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest;
+import software.amazon.awssdk.services.dynamodb.model.TransactWriteItem;
+import software.amazon.awssdk.services.dynamodb.model.Put;
+import software.amazon.awssdk.services.dynamodb.model.Update;
+import software.amazon.awssdk.services.dynamodb.model.TransactionCanceledException;
+import software.amazon.awssdk.services.dynamodb.model.CancellationReason;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -25,6 +35,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Repository
 public class DynamoExecucaoRepository implements ExecucaoRepository {
@@ -34,6 +46,135 @@ public class DynamoExecucaoRepository implements ExecucaoRepository {
     public DynamoExecucaoRepository(DynamoDbClient dynamo, @Value("${dynamodb.table-name}") String tableName) {
         this.dynamo = dynamo;
         this.tableName = tableName;
+    }
+
+    @Override
+    public AgendamentoExecucao agendarExecucao(AgendarExecucaoCommand comando, Instant agora) {
+        Map<String, AttributeValue> chaveOperacao = Map.of(
+                "pk", texto("OPERACAO#" + comando.operationId()), "sk", texto("AGENDAMENTO"));
+        Map<String, AttributeValue> existente = buscar(chaveOperacao);
+        if (!existente.isEmpty()) {
+            return mapearAgendamentoValidado(existente, comando);
+        }
+
+        String osId = comando.osId();
+        AgendarExecucaoCommand.Payload payload = comando.payload();
+        AttributeValue itens = AttributeValue.builder().l(payload.itens().stream()
+                .map(this::itemParaAtributo).toList()).build();
+        Map<String, AttributeValue> operacao = new HashMap<>(chaveOperacao);
+        operacao.put("osId", texto(osId));
+        operacao.put("operationId", texto(comando.operationId()));
+        operacao.put("sagaId", texto(comando.sagaId()));
+        operacao.put("orcamentoId", texto(payload.orcamentoId()));
+        operacao.put("versaoOrcamento", numero(payload.versao()));
+        operacao.put("pagamentoId", texto(payload.pagamentoId()));
+        operacao.put("itens", itens);
+        operacao.put("agendadoEm", texto(agora.toString()));
+
+        Map<String, AttributeValue> execucao = new HashMap<>(chaveExecucao(osId));
+        execucao.put("status", texto("AGENDADA"));
+        execucao.put("operationId", texto(comando.operationId()));
+        execucao.put("sagaId", texto(comando.sagaId()));
+        execucao.put("orcamentoId", texto(payload.orcamentoId()));
+        execucao.put("versaoOrcamento", numero(payload.versao()));
+        execucao.put("pagamentoId", texto(payload.pagamentoId()));
+        execucao.put("agendadoEm", texto(agora.toString()));
+        execucao.put("itens", itens);
+
+        Map<String, AttributeValue> outbox = new HashMap<>(Map.of(
+                "pk", texto("OUTBOX#" + comando.operationId()), "sk", texto("RESULTADO")));
+        outbox.put("type", texto("ExecucaoAgendada"));
+        outbox.put("operationId", texto(comando.operationId()));
+        outbox.put("sagaId", texto(comando.sagaId()));
+        outbox.put("osId", texto(osId));
+        outbox.put("causationId", texto(comando.messageId()));
+        outbox.put("occurredAt", texto(agora.toString()));
+        outbox.put("published", AttributeValue.builder().bool(false).build());
+
+        List<TransactWriteItem> writes = new ArrayList<>();
+        List<ItemSolicitado> pecas = payload.itens().stream()
+                .filter(item -> item.tipo() == TipoItem.PECA).toList();
+        for (ItemSolicitado item : pecas) {
+            writes.add(TransactWriteItem.builder().update(Update.builder()
+                    .tableName(tableName).key(chaveCatalogo(item.tipo(), item.itemId()))
+                    .updateExpression("SET quantidadeEstoque = quantidadeEstoque - :quantidade")
+                    .conditionExpression("attribute_exists(pk) AND ativo = :ativo AND quantidadeEstoque >= :quantidade")
+                    .expressionAttributeValues(Map.of(":quantidade", numero(item.quantidade()),
+                            ":ativo", AttributeValue.builder().bool(true).build()))
+                    .build()).build());
+        }
+        writes.add(putSeAusente(execucao));
+        writes.add(putSeAusente(operacao));
+        writes.add(putSeAusente(outbox));
+        try {
+            dynamo.transactWriteItems(TransactWriteItemsRequest.builder().transactItems(writes).build());
+            return mapearAgendamento(operacao);
+        } catch (TransactionCanceledException conflito) {
+            // Um retry concorrente pode ter gravado a mesma operação antes desta transação.
+            Map<String, AttributeValue> concluida = buscar(chaveOperacao);
+            if (!concluida.isEmpty()) {
+                return mapearAgendamentoValidado(concluida, comando);
+            }
+            List<CancellationReason> motivos = conflito.cancellationReasons();
+            if (motivos != null) {
+                for (int i = 0; i < pecas.size() && i < motivos.size(); i++) {
+                    if ("ConditionalCheckFailed".equals(motivos.get(i).code())) {
+                        throw new PecaIndisponivelException(pecas.get(i).itemId(), conflito);
+                    }
+                }
+                if (motivos.size() > pecas.size()
+                        && "ConditionalCheckFailed".equals(motivos.get(pecas.size()).code())) {
+                    throw new ExecucaoJaAgendadaException(osId, conflito);
+                }
+            }
+            throw conflito;
+        }
+    }
+
+    private TransactWriteItem putSeAusente(Map<String, AttributeValue> item) {
+        return TransactWriteItem.builder().put(Put.builder().tableName(tableName)
+                .item(item).conditionExpression("attribute_not_exists(pk)").build()).build();
+    }
+
+    private Map<String, AttributeValue> chaveExecucao(String osId) {
+        return Map.of("pk", texto("OS#" + osId), "sk", texto("EXECUCAO"));
+    }
+
+    private AttributeValue itemParaAtributo(ItemSolicitado item) {
+        return AttributeValue.builder().m(Map.of("tipo", texto(item.tipo().name()),
+                "itemId", texto(item.itemId()), "quantidade", numero(item.quantidade()))).build();
+    }
+
+    private Set<ItemSolicitado> itensDaOperacao(Map<String, AttributeValue> operacao) {
+        if (!operacao.containsKey("itens")) {
+            throw new IllegalArgumentException("operationId sem itens registrados");
+        }
+        return operacao.get("itens").l().stream().map(valor -> {
+            Map<String, AttributeValue> campos = valor.m();
+            return new ItemSolicitado(TipoItem.valueOf(campos.get("tipo").s()),
+                    campos.get("itemId").s(), Integer.parseInt(campos.get("quantidade").n()));
+        }).collect(Collectors.toSet());
+    }
+
+    private AgendamentoExecucao mapearAgendamentoValidado(Map<String, AttributeValue> item,
+                                                           AgendarExecucaoCommand comando) {
+        AgendamentoExecucao agendamento = mapearAgendamento(item);
+        if (!agendamento.osId().equals(comando.osId())
+                || !agendamento.sagaId().equals(comando.sagaId())
+                || !agendamento.orcamentoId().equals(comando.payload().orcamentoId())
+                || agendamento.versaoOrcamento() != comando.payload().versao()
+                || !agendamento.pagamentoId().equals(comando.payload().pagamentoId())
+                || !itensDaOperacao(item).equals(Set.copyOf(comando.payload().itens()))) {
+            throw new IllegalArgumentException("operationId reutilizado com dados diferentes");
+        }
+        return agendamento;
+    }
+
+    private AgendamentoExecucao mapearAgendamento(Map<String, AttributeValue> item) {
+        return new AgendamentoExecucao(item.get("osId").s(), item.get("operationId").s(),
+                item.get("sagaId").s(), item.get("orcamentoId").s(),
+                Integer.parseInt(item.get("versaoOrcamento").n()), item.get("pagamentoId").s(),
+                Instant.parse(item.get("agendadoEm").s()));
     }
 
     @Override

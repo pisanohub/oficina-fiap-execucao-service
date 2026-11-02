@@ -1,6 +1,8 @@
 package br.com.fiap.soat15.execucaoservice.application;
 
 import br.com.fiap.soat15.execucaoservice.domain.model.Cotacao;
+import br.com.fiap.soat15.execucaoservice.domain.model.AgendamentoExecucao;
+import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
 import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCotado;
@@ -20,6 +22,14 @@ public class ExecucaoService {
     public ExecucaoService(ExecucaoRepository repository, Clock clock) {
         this.repository = repository;
         this.clock = clock;
+    }
+
+    public AgendamentoExecucao agendarExecucao(AgendarExecucaoCommand comando) {
+        if (comando == null) {
+            throw new IllegalArgumentException("Comando é obrigatório");
+        }
+        validarItens(comando.payload().itens());
+        return repository.agendarExecucao(comando, clock.instant());
     }
 
     public Diagnostico iniciarDiagnostico(String osId) {
