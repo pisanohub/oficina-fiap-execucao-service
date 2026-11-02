@@ -4,9 +4,19 @@ spring:
 
 aws:
   region: ${AWS_REGION:us-east-1}
+  dynamodb-endpoint: ${DYNAMODB_ENDPOINT_URL:}
+  sqs-endpoint: ${SQS_ENDPOINT_URL:}
 
 dynamodb:
   table-name: ${DYNAMODB_TABLE_NAME:execucao_service}
+
+sqs:
+  execucao-resultados-url: ${SQS_EXECUCAO_RESULTADOS_URL:}
+
+outbox:
+  publisher:
+    enabled: ${OUTBOX_PUBLISHER_ENABLED:false}
+    poll-delay-ms: ${OUTBOX_POLL_DELAY_MS:5000}
 
 management:
   endpoints:
