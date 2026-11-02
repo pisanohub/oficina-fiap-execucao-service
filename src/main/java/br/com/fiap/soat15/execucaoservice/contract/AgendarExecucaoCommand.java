@@ -6,7 +6,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/** Contrato provisório v1; ainda não é consumido até existir reserva atômica de peças. */
+/** Contrato provisório v1; o consumo SQS será habilitado após publicação da outbox. */
 public record AgendarExecucaoCommand(
         int schemaVersion,
         String messageId,

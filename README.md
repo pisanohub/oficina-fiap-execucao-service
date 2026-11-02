@@ -55,12 +55,14 @@ Health check: `GET /actuator/health`.
 
 Este repositório começou como esqueleto. O primeiro incremento de diagnóstico, catálogo
 e cotação já usa DynamoDB e as mesmas rotas HTTP em todos os ambientes. O contrato
-`AgendarExecucao` está tipado e documentado, mas o consumo SQS, a reserva de peças,
-a fila de trabalho, a autenticação e o deploy integrado ainda estão pendentes.
+`AgendarExecucao` está tipado e documentado. O agendamento já reserva peças e grava
+execução, deduplicação e outbox em uma única transação DynamoDB. O consumo SQS, a
+publicação da outbox, as rotas da fila de trabalho, a autenticação e o deploy integrado
+ainda estão pendentes.
 
 Próximas etapas do serviço:
 
-- Reserva atômica de peças, fila de trabalho e consumo/publicação SQS da Saga.
+- Publicação da outbox, consumo SQS da Saga e operação da fila de trabalho.
 - Autenticação/autorização das rotas e acesso interno entre serviços.
 - Infraestrutura DynamoDB/SQS no ambiente do grupo, cobertura mínima de 80%, BDD,
   quality gate e deploy automatizado. O CI atual ainda executa apenas build e testes.

@@ -1,5 +1,7 @@
 package br.com.fiap.soat15.execucaoservice.application;
 
+import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
+import br.com.fiap.soat15.execucaoservice.domain.model.AgendamentoExecucao;
 import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
@@ -95,9 +97,48 @@ class ExecucaoServiceTest {
         assertThat(repository.catalogo).isEmpty();
     }
 
+    @Test
+    void agendamentoRejeitaItensRepetidosAntesDeReservarEstoque() {
+        ItemSolicitado peca = new ItemSolicitado(TipoItem.PECA, "filtro", 1);
+        AgendarExecucaoCommand comando = comandoAgendar(List.of(peca, peca));
+
+        assertThatThrownBy(() -> service.agendarExecucao(comando))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("repetidos");
+        assertThat(repository.comandoAgendado).isNull();
+    }
+
+    @Test
+    void agendamentoEncaminhaComandoValidadoAoRepositorio() {
+        AgendarExecucaoCommand comando = comandoAgendar(List.of(
+                new ItemSolicitado(TipoItem.PECA, "filtro", 1)));
+
+        AgendamentoExecucao agendamento = service.agendarExecucao(comando);
+
+        assertThat(repository.comandoAgendado).isSameAs(comando);
+        assertThat(repository.instanteAgendamento).isEqualTo(agora);
+        assertThat(agendamento.osId()).isEqualTo("123");
+    }
+
+    private AgendarExecucaoCommand comandoAgendar(List<ItemSolicitado> itens) {
+        return new AgendarExecucaoCommand(1, "02539ee2-c754-4bb7-b178-4b328de9dbd5",
+                "agendar-os-123-v2", "AgendarExecucao", "saga-123", "123", "pagamento-confirmado-123",
+                agora.toString(), new AgendarExecucaoCommand.Payload("orc-123", 2, "pag-123", itens));
+    }
+
     private static class RepositorioEmMemoria implements ExecucaoRepository {
         private final Map<String, Diagnostico> diagnosticos = new HashMap<>();
         private final Map<String, ItemCatalogo> catalogo = new HashMap<>();
+        private AgendarExecucaoCommand comandoAgendado;
+        private Instant instanteAgendamento;
+
+        @Override
+        public AgendamentoExecucao agendarExecucao(AgendarExecucaoCommand comando, Instant agora) {
+            comandoAgendado = comando;
+            instanteAgendamento = agora;
+            return new AgendamentoExecucao(comando.osId(), comando.operationId(), comando.sagaId(),
+                    comando.payload().orcamentoId(), comando.payload().versao(),
+                    comando.payload().pagamentoId(), agora);
+        }
 
         @Override
         public Diagnostico iniciarDiagnostico(String osId, Instant agora) {
