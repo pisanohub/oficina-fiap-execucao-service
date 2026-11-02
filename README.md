@@ -71,7 +71,7 @@ estão disponíveis nesta branch. A autenticação e o deploy integrado ainda es
 
 Próximas etapas do serviço:
 
-- Cancelamento e compensação da execução, conforme contrato com o grupo.
+- Alinhar com o grupo os contratos e a orquestração do cancelamento e do estorno.
 - Autenticação e autorização para operadores e serviços nas rotas `/api/v1`.
 - Infraestrutura DynamoDB/SQS no ambiente do grupo, cobertura mínima de 80%, BDD,
   quality gate e deploy automatizado. O CI atual ainda executa apenas build e testes.

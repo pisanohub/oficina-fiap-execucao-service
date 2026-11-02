@@ -5,6 +5,7 @@ import software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsResponse
 import br.com.fiap.soat15.execucaoservice.application.ExecucaoJaAgendadaException;
 import br.com.fiap.soat15.execucaoservice.application.PecaIndisponivelException;
 import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
+import br.com.fiap.soat15.execucaoservice.contract.CancelarExecucaoCommand;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,6 +66,28 @@ class DynamoExecucaoRepositoryTest {
         assertThat(escritas.get(3).put().item().get("pk").s()).isEqualTo("OUTBOX#op-123");
         assertThat(escritas.get(3).put().item().get("published").bool()).isFalse();
         assertThat(agendamento.osId()).isEqualTo("123");
+    }
+
+    @Test
+    void cancelamentoAgendadoDevolvePecaERegistraResultadoAtomicamente() {
+        var agendar = comando(List.of(new ItemSolicitado(TipoItem.PECA, "filtro", 2)));
+        repository.agendarExecucao(agendar, agora);
+        var captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamo).transactWriteItems(captor.capture());
+        var execucao = captor.getValue().transactItems().get(1).put().item();
+        var cancelar = new CancelarExecucaoCommand(1, "c35edc18-a723-47a0-9eb9-fbce7030e3cc", "cancel-1",
+                "CancelarExecucao", agendar.sagaId(), agendar.osId(), "causa", agora.toString());
+        when(dynamo.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().build(), GetItemResponse.builder().item(execucao).build());
+        repository.cancelarExecucao(cancelar, agora);
+        verify(dynamo, times(2)).transactWriteItems(captor.capture());
+        var writes = captor.getAllValues().get(captor.getAllValues().size() - 1).transactItems();
+        assertThat(writes).hasSize(4);
+        assertThat(writes.get(0).update().updateExpression()).contains("quantidadeEstoque + :quantidade");
+        assertThat(writes.get(1).update().conditionExpression()).contains(":atual");
+        assertThat(writes.get(3).put().item().get("type").s()).isEqualTo("ExecucaoCancelada");
+        when(dynamo.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(writes.get(2).put().item()).build());
+        repository.cancelarExecucao(cancelar, agora.plusSeconds(1));
+        verify(dynamo, times(2)).transactWriteItems(any(TransactWriteItemsRequest.class));
     }
 
     @Test

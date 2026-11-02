@@ -4,6 +4,7 @@ import br.com.fiap.soat15.execucaoservice.domain.model.ExecucaoTrabalho;
 import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
 import br.com.fiap.soat15.execucaoservice.domain.model.AgendamentoExecucao;
 import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
+import br.com.fiap.soat15.execucaoservice.contract.CancelarExecucaoCommand;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
@@ -14,6 +15,8 @@ import java.util.Optional;
 
 public interface ExecucaoRepository {
     AgendamentoExecucao agendarExecucao(AgendarExecucaoCommand comando, Instant agora);
+
+    void cancelarExecucao(CancelarExecucaoCommand comando, Instant agora);
 
     List<ExecucaoTrabalho> listarExecucoes();
 
