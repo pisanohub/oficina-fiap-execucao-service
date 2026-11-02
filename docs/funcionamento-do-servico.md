@@ -43,7 +43,7 @@ Arquitetura em camadas, estilo hexagonal (`br.com.fiap.soat15.execucaoservice`):
 | `application` | `ExecucaoService` (casos de uso e validações), interfaces `ExecucaoRepository` e `OutboxRepository`, `OutboxEvent` (monta a mensagem de saída) e exceções de negócio. |
 | `domain/model` | Records: `ExecucaoTrabalho`, `Diagnostico`, `ItemCatalogo`, `ItemSolicitado`, `ItemCotado`, `Cotacao`, `AgendamentoExecucao`, enum `TipoItem` (`PECA`, `SERVICO`). |
 | `contract` | `AgendarExecucaoCommand` e `CancelarExecucaoCommand`, com validação do envelope no construtor. |
-| `adapter/out/dynamodb` | `DynamoExecucaoRepository` (regras transacionais) e `DynamoOutboxRepository` (leitura/reserva/baixa da outbox). |
+| `adapter/out/dynamodb` | `DynamoExecucaoRepository` (fachada que implementa `ExecucaoRepository`) delega para `DynamoAgendamentoRepository` (agendar), `DynamoCicloExecucaoRepository` (iniciar, concluir, cancelar), `DynamoDiagnosticoRepository` e `DynamoCatalogoRepository`; `DynamoKeys` monta as chaves `pk`/`sk`. `DynamoOutboxRepository` cuida da leitura, reserva e baixa da outbox. |
 | `adapter/out/sqs` | `OutboxPublisher`: envia eventos pendentes para `execucao-resultados`. |
 | `config` | Clientes `DynamoDbClient` e `SqsClient`, `Clock` UTC e `@EnableScheduling`. |
 

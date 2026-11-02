@@ -1,93 +1,131 @@
-# Contratos provisórios de Execução - revisão 1
+# Guia de integração com o Execução Service
 
-**Status:** topologia de quatro filas aprovada pelo grupo; payloads e rotas ainda sujeitos à validação com Gabriel Souza, Gabriel Ramos e Pedro. Atualizado após a sequência informada por Pedro em 02/11/2026. O arquivo `event-storming-saga-v1.md` atualizado ainda não apareceu no checkout de `oficina_fiap/main` após `git pull`; esta revisão usa a mensagem do Pedro como referência.
+**Para quem é:** Gabriel Souza (OS Service / orquestrador da Saga) e Gabriel Ramos (Billing Service).
+**Status:** contrato **provisório**, implementado no Execução Service e ainda a validar com os dois. Tudo o que está aqui descreve o que o código **já faz hoje**; os pontos em aberto estão na [última seção](#10-pontos-em-aberto-para-validar).
 
-## Sequência de negócio
+Este documento responde, para quem vai chamar o Execução: **o que enviar, para onde, em que formato, o que cada campo significa, o que volta e o que acontece quando algo dá errado.** Para a visão interna do serviço, veja [funcionamento-do-servico.md](funcionamento-do-servico.md) e [arquitetura-execucao.md](arquitetura-execucao.md).
 
-1. OS é aberta no **OS Service**, sem disparar orçamento.
-2. Mecânico inicia diagnóstico e registra serviços/peças no **Execução Service**. O OS registra/projeta `EM_DIAGNOSTICO`.
-3. A ação explícita **solicitar orçamento** ocorre no **OS Service**. O OS obtém os itens e a versão do diagnóstico por contrato interno com Execução e publica `GerarOrcamento` para Billing.
-4. Após aprovação e pagamento confirmado, o OS publica `AgendarExecucao` para Execução. Só então Execução reserva peças e cria a fila de trabalho.
+---
 
-O Execução Service não altera diretamente o status ou o banco do OS. A forma de autenticar o operador e autorizar o acesso dos serviços às rotas será fechada com o grupo.
+## 1. Resumo em um minuto
 
-## HTTP de diagnóstico e cotação
+O Execução Service cuida de **diagnóstico, catálogo/estoque de peças e fila de trabalho do mecânico**. Ele conversa com os outros serviços de dois jeitos:
 
-As **mesmas rotas e o mesmo código** são usados localmente e no ambiente do grupo. Apenas o endpoint do DynamoDB/SQS, credenciais e porta mudam por configuração. Os caminhos ainda serão validados com o grupo:
+| Canal | Quando usar | Quem usa |
+| --- | --- | --- |
+| **HTTP** (`/api/v1/...`) | Consultas e ações síncronas: ler o diagnóstico, cotar preços. | OS Service (ler diagnóstico), Billing (cotar preços) |
+| **SQS** (mensagens JSON) | Ações da Saga que mudam estado: agendar e cancelar a execução. Também é por onde o Execução avisa o resultado. | OS Service |
 
-| Operação | Rota implementada |
-| --- | --- |
-| Cadastrar item de catálogo/estoque | `POST /api/v1/catalogo` |
-| Iniciar diagnóstico | `POST /api/v1/diagnosticos/{osId}/inicio` |
-| Substituir itens com versão esperada | `PUT /api/v1/diagnosticos/{osId}/itens` |
-| Consultar diagnóstico como operador | `GET /api/v1/diagnosticos/{osId}` |
-| OS lê diagnóstico e versão para solicitar orçamento | `GET /api/v1/diagnosticos/{osId}` |
-| Billing consulta preços do catálogo | `POST /api/v1/cotacoes` |
+Resumo de "quem faz o quê":
 
-Exemplo de atualização (a primeira versão após iniciar é `1`):
+| Serviço | Ação | Canal | Seção |
+| --- | --- | --- | --- |
+| OS Service | Ler itens e versão do diagnóstico antes de pedir orçamento | `GET /api/v1/diagnosticos/{osId}` | [8](#8-http-para-os-service-e-billing) |
+| Billing | Consultar preços atuais para montar o orçamento | `POST /api/v1/cotacoes` | [8](#8-http-para-os-service-e-billing) |
+| OS Service | Mandar executar a OS depois do pagamento | SQS `execucao-comandos`, tipo `AgendarExecucao` | [4](#4-comando-agendarexecucao) |
+| OS Service | Cancelar uma execução (compensação) | SQS `execucao-comandos`, tipo `CancelarExecucao` | [5](#5-comando-cancelarexecucao) |
+| OS Service | Saber o que aconteceu (agendou, rejeitou, iniciou, concluiu, cancelou) | SQS `execucao-resultados` (o OS **lê**) | [6](#6-eventos-de-resposta) |
 
-```json
-{
-  "versaoEsperada": 1,
-  "itens": [
-    { "tipo": "SERVICO", "itemId": "troca-oleo", "quantidade": 1 },
-    { "tipo": "PECA", "itemId": "filtro-oleo", "quantidade": 1 }
-  ]
-}
+O mecânico inicia e conclui o trabalho por HTTP, direto no Execução (não passa pelo OS). O OS fica sabendo pelos eventos `ExecucaoIniciada` e `ExecucaoConcluida`.
+
+```mermaid
+sequenceDiagram
+    participant OS as OS Service (Saga)
+    participant B as Billing
+    participant E as Execução Service
+    participant M as Mecânico
+
+    M->>E: HTTP: inicia diagnóstico e registra itens
+    OS->>E: HTTP: GET /diagnosticos/{osId}
+    OS->>B: GerarOrcamento (fila do Billing)
+    B->>E: HTTP: POST /cotacoes (preços atuais)
+    Note over OS,B: cliente aprova e o pagamento é confirmado
+    OS-->>E: SQS execucao-comandos: AgendarExecucao
+    E-->>OS: SQS execucao-resultados: ExecucaoAgendada (ou ExecucaoRejeitada)
+    M->>E: HTTP: POST /execucoes/{osId}/inicio
+    E-->>OS: SQS: ExecucaoIniciada
+    M->>E: HTTP: POST /execucoes/{osId}/conclusao
+    E-->>OS: SQS: ExecucaoConcluida
 ```
 
-O catálogo e o diagnóstico pertencem à Execução. Billing usa a cotação para congelar os preços no orçamento. O diagnóstico guarda IDs/quantidades e uma versão; ele não guarda preços, porque a cotação é feita no momento de gerar orçamento. Uma mudança de itens após orçamento exige uma nova versão/novo orçamento e nova aprovação, a alinhar com o grupo. Antes de expor essas rotas pelo Gateway, falta aplicar autenticação e autorização para operadores e serviços.
+---
 
-## Como explicar a integração ao responsável pelo OS Service
+## 2. Conceitos que aparecem em todas as mensagens
 
-**Esta é a proposta que o Execução Service entende hoje; ainda precisamos combiná-la com o Gabriel.** Não significa que o OS Service já esteja enviando essas mensagens. O serviço que envia a mensagem preenche o JSON e o coloca na fila SQS; o SQS transporta o corpo informado. Os campos de negócio não são preenchidos automaticamente pelo SQS.
-
-Após o pagamento, a sequência esperada é:
-
-1. O OS Service reúne os identificadores da OS, saga, orçamento e pagamento, e os itens aprovados.
-2. O OS Service cria o comando `AgendarExecucao` e o envia para `execucao-comandos`, preenchendo os campos abaixo.
-3. O Execução Service lê o comando, tenta agendar e registra um evento na outbox.
-4. O Execução Service publica `ExecucaoAgendada` ou `ExecucaoRejeitada` em `execucao-resultados`; o OS Service lê a resposta e decide a próxima etapa.
-
-| Campo recebido pelo Execução | Quem preenche no comando | Como explicar |
-| --- | --- | --- |
-| `schemaVersion` | OS Service | Enviar o número `1`: indica a versão do formato da mensagem que combinamos. É a versão do **contrato**, não da OS nem do orçamento. O código atual rejeita outro número. |
-| `messageId` | OS Service | Criar um UUID válido para identificar a mensagem no JSON. Não confundir com o identificador que o próprio SQS fornece ao transportar a mensagem. |
-| `operationId` | OS Service | Criar um identificador para a ação de agendar, por exemplo `agendar-os-123-orcamento-v2`. Se precisar reenviar a mesma ação, usar o mesmo valor. Outra ação, como cancelamento, precisa de outro identificador. |
-| `type` | OS Service | Enviar exatamente `AgendarExecucao` para solicitar agendamento ou `CancelarExecucao` para solicitar cancelamento. |
-| `sagaId` | Serviço que inicia ou coordena a saga, a combinar | Identificador que acompanha o mesmo fluxo entre serviços. O OS precisa incluí-lo no comando; no cancelamento deve corresponder ao da execução. |
-| `osId` | OS Service | Identificador da OS, como texto. No exemplo, `"123"`. |
-| `causationId` | OS Service, se disponível | Identifica o evento ou ação que motivou o comando, por exemplo a confirmação do pagamento. É opcional na validação atual. |
-| `occurredAt` | OS Service | Data e hora de criação do comando em formato de instante, por exemplo `2026-11-02T14:00:00Z`. |
-| `payload.orcamentoId` | OS Service, com dados do orçamento | Identificador do orçamento aprovado. |
-| `payload.versao` | OS Service, com dados do orçamento | Versão do orçamento aprovado, número inteiro positivo. É independente de `schemaVersion`. |
-| `payload.pagamentoId` | OS Service, com dados do pagamento | Identificador do pagamento confirmado. |
-| `payload.itens` | OS Service, com dados aprovados | Lista de peças e serviços com `tipo`, `itemId` e `quantidade`; é a lista que Execução tentará agendar. |
-
-A origem exata de cada dado entre OS e Billing, o identificador da saga e os nomes dos campos precisam ser confirmados com o grupo. O exemplo completo do comando aparece na seção seguinte.
-
-**Exemplo de repetição:** se o OS reenviar o agendamento da OS `123` por não ter recebido a resposta, deve manter `operationId: agendar-os-123-orcamento-v2` e os mesmos dados da operação. Isso permite reconhecer o agendamento já processado e evita reservar as peças duas vezes. O SQS também pode entregar a mesma mensagem novamente; o consumidor precisa tolerar essa situação.
-
-**Resposta:** o Execução Service cria outro JSON, por exemplo com `type: ExecucaoAgendada`. Ele mantém `sagaId`, `osId` e a `operationId` do agendamento, gera seu próprio `messageId` e coloca no `causationId` o `messageId` do comando recebido. Quando o mecânico inicia ou conclui por HTTP, Execução gera uma `operationId` própria para cada ação e publica os respectivos eventos. Os exemplos estão em **Mensagens de integração**.
-
-Sugestão de mensagem para o Gabriel:
-
-> Gabriel, no Execução Service implementei provisoriamente o recebimento de `AgendarExecucao` pela fila `execucao-comandos`. O OS enviaria os identificadores da saga, OS, orçamento e pagamento, além dos itens aprovados. Também enviaria `schemaVersion: 1`, um `messageId` UUID e um `operationId` que se mantém igual quando a mesma ação for repetida. Em resposta, Execução publicaria `ExecucaoAgendada` ou `ExecucaoRejeitada` em `execucao-resultados`. Podemos validar juntos esses campos e quem gera o `sagaId`? Os exemplos completos estão neste documento.
-
-## SQS após pagamento
-
-A topologia prevista tem quatro filas principais, com uma DLQ para cada uma. O Terraform deste serviço define as duas filas de Execução e suas DLQs; confirme com a equipe a posse dos recursos antes do deploy:
-
-| Fila principal | Publicador | Consumidor | DLQ |
+| Termo | O que é | Quem cria | Exemplo |
 | --- | --- | --- | --- |
-| `billing-comandos` | OS | Billing | `billing-comandos-dlq` |
-| `billing-resultados` | Billing | OS | `billing-resultados-dlq` |
-| `execucao-comandos` | OS | Execução | `execucao-comandos-dlq` |
-| `execucao-resultados` | Execução | OS | `execucao-resultados-dlq` |
+| `osId` | Identificador da Ordem de Serviço, sempre **texto**. É a chave para achar diagnóstico e execução. | OS Service | `"123"` |
+| `sagaId` | Identificador da Saga daquela OS. Acompanha todas as mensagens do mesmo fluxo para correlacionar passos. O Execução **não gera nem interpreta**: guarda o que o OS enviou e devolve igual nos eventos. | OS Service (orquestrador) | `"saga-123"` |
+| `operationId` | Identidade da **ação de negócio**. Serve para deduplicar: reenviar a mesma ação = mesmo `operationId`; ação diferente = `operationId` diferente. | Quem envia o comando | `"agendar-os-123-orcamento-v2"` |
+| `messageId` | Identificador **da mensagem** (UUID). Nos comandos, o OS cria. Nos eventos, o Execução cria e ele é sempre o mesmo para o mesmo evento. Não é o `MessageId` interno do SQS. | Quem envia a mensagem | `"02539ee2-c754-4bb7-b178-4b328de9dbd5"` |
+| `causationId` | O que motivou a mensagem. Nos eventos de resposta ao comando, é o `messageId` do comando recebido. | Quem envia | `"02539ee2-..."` |
+| `schemaVersion` | Versão do **formato** da mensagem. Hoje sempre o número `1`. Não tem relação com a versão do orçamento. | Quem envia | `1` |
+| `payload.versao` | Versão do **orçamento** aprovado (inteiro > 0). | OS/Billing | `2` |
+| `versao` (no diagnóstico) | Contador de revisão da lista de itens do diagnóstico. Conceito diferente de `payload.versao`. | Execução | `1` |
 
-SQS transporta comandos/resultados; a fila de trabalho é persistida no DynamoDB. O OS consome as duas filas de resultados. Os nomes acima são a convenção de implementação a validar contra o Terraform do Pedro antes do deploy.
+Regras de ouro:
 
-Exemplo do comando a receber em `execucao-comandos`:
+1. **Mesma ação reenviada → mesmo `operationId`.** É assim que o Execução reconhece repetição e evita reservar peça duas vezes.
+2. **Ação diferente → `operationId` diferente**, inclusive entre tipos de comando e entre OS diferentes. Um bom padrão: `<acao>-os-<osId>-<detalhe>`, como `agendar-os-123-orcamento-v2` e `cancelar-os-123`.
+3. Reusar um `operationId` com **dados diferentes** é erro (a mensagem falha e vai para a DLQ).
+4. O SQS pode entregar a mesma mensagem mais de uma vez. **Quem consome precisa tolerar duplicatas** (vale para o Execução e para o OS).
+
+---
+
+## 3. Filas e como enviar uma mensagem
+
+### Filas
+
+São filas SQS **Standard** (não FIFO): não têm ordem garantida e não usam `MessageGroupId` nem `MessageDeduplicationId`.
+
+| Fila | Quem escreve | Quem lê | Para quê |
+| --- | --- | --- | --- |
+| `execucao-comandos` | **OS Service** | Execução | Comandos `AgendarExecucao` e `CancelarExecucao` |
+| `execucao-comandos-dlq` | SQS (automático) | Operação/suporte | Comandos que falharam várias vezes |
+| `execucao-resultados` | **Execução** | **OS Service** | Eventos de resultado |
+| `execucao-resultados-dlq` | SQS (automático) | Operação/suporte | Eventos que o OS não conseguiu processar |
+
+Configuração prevista no Terraform: visibilidade 60 s, long polling de 10 s, `maxReceiveCount = 3` (após 3 recebimentos sem confirmação a mensagem vai para a DLQ) e retenção de 14 dias nas DLQs. A URL de cada fila vem do ambiente (peça ao Pedro); o OS usa a URL de `execucao-comandos` para enviar e a de `execucao-resultados` para ler.
+
+### Como enviar
+
+1. Monte o JSON do comando (seções 4 e 5).
+2. Coloque o JSON, como **texto**, no corpo (`MessageBody`) de um `SendMessage` na fila `execucao-comandos`. Não precisa de atributos de mensagem.
+3. O `SendMessage` só garante que o SQS recebeu. A resposta de negócio chega depois, como evento em `execucao-resultados`.
+
+Exemplo com AWS CLI (útil para testar na mão):
+
+```bash
+aws sqs send-message \
+  --queue-url "$SQS_EXECUCAO_COMANDOS_URL" \
+  --message-body file://agendar.json
+```
+
+Exemplo em Java (AWS SDK v2):
+
+```java
+String corpo = objectMapper.writeValueAsString(comando); // o JSON da seção 4
+sqs.sendMessage(SendMessageRequest.builder()
+        .queueUrl(urlExecucaoComandos)
+        .messageBody(corpo)
+        .build());
+```
+
+### Cuidados com o JSON
+
+- Todos os campos obrigatórios devem estar presentes. Envie **só** os campos descritos aqui.
+- `occurredAt` e demais datas em UTC no formato ISO-8601 com `Z`, por exemplo `2026-11-02T14:00:00Z`.
+- `messageId` precisa ser um UUID válido.
+- Valores de `tipo` dos itens são exatamente `PECA` ou `SERVICO` (maiúsculas).
+- `osId`, `itemId` e demais identificadores são strings.
+
+---
+
+## 4. Comando `AgendarExecucao`
+
+**Quando enviar:** depois que o orçamento foi aprovado **e** o pagamento confirmado. É nesse momento que o Execução reserva as peças e coloca a OS na fila de trabalho.
+
+### Exemplo completo
 
 ```json
 {
@@ -111,180 +149,77 @@ Exemplo do comando a receber em `execucao-comandos`:
 }
 ```
 
-`messageId` identifica o envelope; `operationId` é a identidade estável da operação de negócio para deduplicação; `sagaId` e `osId` correlacionam as etapas. `occurredAt` é UTC. O código valida `AgendarExecucaoCommand` e já oferece `ExecucaoService.agendarExecucao`: uma única transação DynamoDB reduz o estoque das peças, cria a execução `AGENDADA`, registra `operationId` para deduplicação e grava `ExecucaoAgendada` na outbox. A execução usa `pk=OS#{osId}, sk=EXECUCAO`; a operação usa `pk=OPERACAO#{operationId}, sk=AGENDAMENTO`; a outbox usa `pk=OUTBOX#{operationId}, sk=RESULTADO`. A mesma `operationId` retorna o agendamento existente; uma segunda operação para a mesma OS não cria outra execução. Estoque insuficiente ou conflito cancelam toda a transação. O consumidor SQS e o publicador da outbox podem ser habilitados por configuração. Os itens de serviço permanecem no registro de execução; só peças reduzem estoque.
+### Campos do envelope
 
-Eventos enviados por Execução para `execucao-resultados`:
+| Campo | Tipo | Obrigatório | Como preencher | Validação no Execução |
+| --- | --- | --- | --- | --- |
+| `schemaVersion` | inteiro | sim | Sempre `1`. | Diferente de `1` → rejeitado |
+| `messageId` | texto (UUID) | sim | Gere um UUID novo para cada mensagem enviada (em reenvio da mesma ação, pode ser o mesmo ou outro). | Precisa ser UUID válido |
+| `operationId` | texto | sim | Identidade desta ação de agendamento. Mantenha igual nos reenvios da mesma ação. | Não pode ser vazio |
+| `type` | texto | sim | Exatamente `AgendarExecucao`. | Outro valor → rejeitado |
+| `sagaId` | texto | sim | O identificador da Saga desta OS, gerado pelo orquestrador. | Não pode ser vazio |
+| `osId` | texto | sim | Id da OS. | Não pode ser vazio |
+| `causationId` | texto | não | O que originou o comando (ex.: id do evento de pagamento confirmado). | Não validado |
+| `occurredAt` | texto (ISO-8601) | sim | Momento em que o comando foi criado, UTC. | Precisa ser instante válido |
+| `payload` | objeto | sim | Veja abaixo. | Não pode ser nulo |
 
-| Evento | Status no payload | Situação |
+### Campos do `payload`
+
+| Campo | Tipo | Obrigatório | De onde vem | Validação |
+| --- | --- | --- | --- | --- |
+| `orcamentoId` | texto | sim | Orçamento aprovado (Billing). | Não vazio |
+| `versao` | inteiro | sim | Versão do orçamento aprovado. | Maior que 0 |
+| `pagamentoId` | texto | sim | Pagamento confirmado (Billing). | Não vazio |
+| `itens` | lista | sim | Itens aprovados: **os mesmos** do orçamento. | De 1 a 20 itens |
+
+Cada item de `itens`:
+
+| Campo | Tipo | Regra |
 | --- | --- | --- |
-| `ExecucaoAgendada` | `AGENDADA` | Implementado nesta branch |
-| `ExecucaoIniciada` | `EM_EXECUCAO` | Implementado nesta branch |
-| `ExecucaoConcluida` | `CONCLUIDA` | Implementado nesta branch |
-| `ExecucaoRejeitada` | Sem status; envia motivo | Implementado |
-| `ExecucaoCancelada` | `CANCELADA` | Implementado nesta branch |
-| `CancelamentoExecucaoRecusado` | Sem status; envia motivo | Implementado nesta branch |
+| `tipo` | texto | `PECA` ou `SERVICO` |
+| `itemId` | texto | Id do item no catálogo do Execução (o mesmo usado no diagnóstico e na cotação) |
+| `quantidade` | inteiro | Maior que 0 |
 
-O status descreve a execução. O OS Service decide como atualizar a OS; essa regra e as compensações ainda precisam ser validadas com o grupo. Exemplos completos estão logo abaixo, em **Mensagens de integração**.
+Não pode haver dois itens com o mesmo `tipo` + `itemId` na lista.
 
-O publicador da outbox envia `ExecucaoAgendada` para `execucao-resultados` quando `OUTBOX_PUBLISHER_ENABLED=true` e `SQS_EXECUCAO_RESULTADOS_URL` aponta para a fila. A mensagem usa `messageId` determinístico por tipo e `operationId`; o payload de agendamento traz `status`, `orcamentoId`, `versao` e `pagamentoId`. Um lease de dois minutos impede que duas réplicas publiquem simultaneamente o mesmo registro. Se o envio falhar, o item continua pendente e é tentado de novo após o lease. Se o SQS aceitar a mensagem mas a confirmação no DynamoDB falhar, pode haver duplicata: o OS deve deduplicar por `operationId`. A busca atual usa `Scan` paginado na tabela; antes de aumentar o volume, devemos criar um índice de pendências para evitar varreduras frequentes.
+### O que o Execução faz ao receber
 
-Para estoque insuficiente confirmado, a operação e o evento `ExecucaoRejeitada` são registrados juntos. O payload contém `motivo: ESTOQUE_INSUFICIENTE`, `itemId`, `orcamentoId`, `versao` e `pagamentoId`. A repetição da mesma operação mantém a rejeição; falhas técnicas deixam o comando na fila. Peças ausentes ou inativas também não são classificadas como estoque insuficiente. O contrato deve ser validado com o OS Service.
+Tudo em **uma única transação** (ou acontece tudo, ou nada):
 
-## Mensagens de integração: quem envia e quem recebe
+1. Para cada item `PECA`, baixa o estoque (a peça precisa existir, estar ativa e ter saldo ≥ quantidade). Itens `SERVICO` **não** mexem em estoque e não são conferidos no catálogo; ficam apenas registrados na execução.
+2. Cria a execução da OS com status `AGENDADA`.
+3. Registra o `operationId` (para reconhecer reenvios).
+4. Grava o evento de resposta, que será publicado em `execucao-resultados`.
 
-Cada JSON é o **corpo de uma mensagem SQS**. OS envia `AgendarExecucao` e `CancelarExecucao` para `execucao-comandos`; Execução consome. Execução envia os eventos para `execucao-resultados`; OS consome. Essas filas transportam mensagens entre serviços: a fila de trabalho do mecânico é um registro persistido na Execução.
+### O que o OS recebe de volta
 
-| Tipo | Direção | Situação |
-| --- | --- | --- |
-| `AgendarExecucao` | OS → Execução | Implementado, contrato provisório; exemplo completo na seção SQS acima |
-| `ExecucaoAgendada` | Execução → OS | Implementado |
-| `ExecucaoRejeitada` | Execução → OS | Implementado |
-| `ExecucaoIniciada` | Execução → OS | Implementado nesta branch |
-| `ExecucaoConcluida` | Execução → OS | Implementado nesta branch |
-| `CancelarExecucao` | OS → Execução | Implementado nesta branch |
-| `ExecucaoCancelada` | Execução → OS | Implementado nesta branch |
-| `CancelamentoExecucaoRecusado` | Execução → OS | Implementado nesta branch |
+| Situação | Resposta (evento em `execucao-resultados`) |
+| --- | --- |
+| Tudo certo | `ExecucaoAgendada` |
+| Alguma peça sem saldo suficiente | `ExecucaoRejeitada` com `motivo: ESTOQUE_INSUFICIENTE` e o `itemId` da peça |
+| Mesmo `operationId` e mesmos dados (reenvio) | Nada muda no estoque; o resultado original (agendada ou rejeitada) é mantido |
 
-### `ExecucaoAgendada` — implementado
+### Quando **não** há resposta (a mensagem falha e vai para nova tentativa → DLQ)
 
-Enviado depois que execução e reserva das peças foram registradas. O campo `causationId` contém o `messageId` do comando recebido. O `messageId` do evento é determinístico a partir do tipo e da operação.
+Estes casos são tratados como **erro** (não como rejeição de negócio) e **não geram evento**. A mensagem volta para a fila e, após 3 tentativas, vai para `execucao-comandos-dlq`:
 
-```json
-{
-  "schemaVersion": 1,
-  "messageId": "aaa4c87e-ef3c-3d38-b566-c23381e44071",
-  "operationId": "agendar-os-123-orcamento-v2",
-  "type": "ExecucaoAgendada",
-  "sagaId": "saga-123",
-  "osId": "123",
-  "causationId": "02539ee2-c754-4bb7-b178-4b328de9dbd5",
-  "occurredAt": "2026-11-02T14:00:00Z",
-  "payload": {"status":"AGENDADA","orcamentoId":"orc-123","versao":2,"pagamentoId":"pag-123"}
-}
-```
+| Caso | Motivo |
+| --- | --- |
+| JSON inválido, campo obrigatório faltando, `tipo` fora de `PECA`/`SERVICO`, `schemaVersion` ≠ 1, `messageId` que não é UUID | Mensagem malformada |
+| Peça inexistente no catálogo, inativa, ou sem estoque cadastrado | Dado de catálogo incorreto (não é "estoque insuficiente") |
+| Já existe execução para a mesma OS, com outro `operationId` | Uma OS só tem uma execução |
+| `operationId` reutilizado com dados diferentes | Violação da regra de ouro 3 |
+| Falha técnica (DynamoDB fora do ar etc.) | Reprocessada automaticamente |
 
-O `messageId` acima é ilustrativo; o valor real é calculado pelo publicador.
+> **Importante para o OS:** se o Execução rejeitar por estoque (`ExecucaoRejeitada`), reenviar com o mesmo `operationId` devolve a mesma rejeição. Para tentar de novo depois de repor o estoque, use **outro `operationId`**.
 
-### `ExecucaoRejeitada` — implementado
+---
 
-Enviado após confirmar estoque insuficiente e gravar a rejeição com a outbox. Possui o mesmo envelope de `ExecucaoAgendada`, com `type` igual a `ExecucaoRejeitada` e o seguinte payload:
+## 5. Comando `CancelarExecucao`
 
-```json
-{"orcamentoId":"orc-123","versao":2,"pagamentoId":"pag-123","motivo":"ESTOQUE_INSUFICIENTE","itemId":"filtro-oleo"}
-```
+**Quando enviar:** compensação da Saga, para desistir da execução (por exemplo, falha depois do agendamento ou cancelamento da OS pelo cliente).
 
-Falhas técnicas, peça inexistente ou inativa não são classificadas como estoque insuficiente; a mensagem não é confirmada e fica sujeita a nova tentativa e à DLQ conforme configuração da infraestrutura.
-
-### `ExecucaoIniciada` — implementado nesta branch
-
-Quando o operador inicia a execução, o serviço publica o evento abaixo. O `operationId` e o `causationId` reais são gerados a partir da OS; os identificadores deste exemplo são ilustrativos.
-
-```json
-{
-  "schemaVersion": 1,
-  "messageId": "37e9ef0b-107a-3d36-83d1-5d9159d93d7d",
-  "operationId": "iniciar-execucao-identificador-da-os",
-  "type": "ExecucaoIniciada",
-  "sagaId": "saga-123",
-  "osId": "123",
-  "causationId": "iniciar-execucao-identificador-da-os",
-  "occurredAt": "2026-11-02T15:00:00Z",
-  "payload": {
-    "status": "EM_EXECUCAO",
-    "iniciadaEm": "2026-11-02T15:00:00Z",
-    "orcamentoId": "orc-123",
-    "versao": 2,
-    "pagamentoId": "pag-123"
-  }
-}
-```
-
-### `ExecucaoConcluida` — implementado nesta branch
-
-Sugestão de estados internos da execução: `AGENDADA → EM_EXECUCAO → CONCLUIDA`. Após a ação do operador, o serviço publica `ExecucaoIniciada` ou `ExecucaoConcluida` em `execucao-resultados`.
-
-Exemplo do corpo de `ExecucaoConcluida`; os identificadores são ilustrativos:
-
-```json
-{
-  "schemaVersion": 1,
-  "messageId": "d1e4ea61-4bc0-4cf9-90ef-4c86c8417f21",
-  "operationId": "concluir-execucao-identificador-da-os",
-  "type": "ExecucaoConcluida",
-  "sagaId": "saga-123",
-  "osId": "123",
-  "causationId": "concluir-execucao-identificador-da-os",
-  "occurredAt": "2026-11-02T17:30:00Z",
-  "payload": {"status":"CONCLUIDA","iniciadaEm":"2026-11-02T15:00:00Z","concluidaEm":"2026-11-02T17:30:00Z","orcamentoId":"orc-123","versao":2,"pagamentoId":"pag-123"}
-}
-```
-
-Os horários permitem medir a duração do trabalho, como no monólito. O `ExecucaoIniciada` implementado usa o mesmo envelope e inclui `iniciadaEm` e `status` no payload. Para início e conclusão, `operationId` e `causationId` são derivados deterministicamente da OS. Cada ação deve ter uma identidade própria estável em repetições; consumidores devem tolerar entrega duplicada.
-
-**Ponto para decisão com OS e infraestrutura:** o desenho informado pelo Pedro coloca a OS em `EM_EXECUCAO` após confirmação do pagamento; no monólito esse estado registra o início do trabalho. Uma alternativa é a OS mudar para `EM_EXECUCAO` ao receber `ExecucaoIniciada`, mas o estado da OS entre pagamento e início precisa ser definido. O cancelamento antes do início está implementado; a compensação e a ordem do estorno ainda precisam ser alinhadas.
-
-## Guia de integração HTTP
-
-Esta seção descreve o comportamento do código desta branch. Endereços, autenticação e autorização para acesso externo ou entre serviços ainda devem ser definidos com o grupo. JSONs são exemplos; `osId` e `itemId` são strings.
-
-### Cadastrar item de catálogo — implementado
-
-`POST /api/v1/catalogo` cria um item. Resposta: `204 No Content`; item já existente: `409 Conflict`. O serviço não tem estoque (`quantidadeEstoque` deve ser nulo); a peça exige quantidade inteira não negativa. O preço aceita até duas casas decimais.
-
-```json
-{"tipo":"PECA","itemId":"filtro-oleo","nome":"Filtro de óleo","precoUnitario":45.50,"ativo":true,"quantidadeEstoque":10}
-```
-
-### Iniciar diagnóstico — implementado
-
-`POST /api/v1/diagnosticos/{osId}/inicio` inicia o diagnóstico ou retorna o existente. Não exige corpo. Exemplo de resposta `200 OK`:
-
-```json
-{"osId":"123","versao":1,"status":"EM_DIAGNOSTICO","itens":[],"atualizadoEm":"2026-11-02T14:00:00Z"}
-```
-
-### Substituir itens do diagnóstico — implementado
-
-`PUT /api/v1/diagnosticos/{osId}/itens` substitui a lista inteira, usando `versaoEsperada` para evitar que uma alteração sobrescreva outra. O exemplo de requisição está na seção HTTP acima. A resposta `200 OK` contém o diagnóstico atualizado, com nova versão. Diagnóstico inexistente retorna `404`; versão divergente, `409`; dados inválidos, `400`.
-
-### Consultar diagnóstico — implementado
-
-`GET /api/v1/diagnosticos/{osId}` é a rota prevista para operador e serviços autorizados. A resposta `200 OK` tem o formato do diagnóstico mostrado acima, incluindo os itens atuais; `404` indica diagnóstico inexistente.
-
-### Consultar preços — implementado
-
-`POST /api/v1/cotacoes` consulta os preços atuais dos itens ativos; não cria orçamento nem reserva estoque. Exemplo de requisição:
-
-```json
-{"itens":[{"tipo":"PECA","itemId":"filtro-oleo","quantidade":2}]}
-```
-
-Exemplo de resposta `200 OK`:
-
-```json
-{"moeda":"BRL","geradaEm":"2026-11-02T14:00:00Z","itens":[{"tipo":"PECA","itemId":"filtro-oleo","nome":"Filtro de óleo","quantidade":2,"precoUnitario":45.50}]}
-```
-
-Itens ausentes ou inativos e requisições inválidas podem retornar `400`. O Billing é responsável por formar e congelar o orçamento conforme o contrato a ser alinhado.
-
-## Fila de trabalho — implementação nesta branch
-
-- `GET /api/v1/execucoes`: lista execuções registradas. A consulta atual percorre a tabela DynamoDB inteira e não tem paginação HTTP; é uma implementação inicial para baixo volume.
-- `GET /api/v1/execucoes/{osId}`: consulta uma execução; retorna `404` se não existir.
-- `POST /api/v1/execucoes/{osId}/conclusao`: conclui uma execução `EM_EXECUCAO`, sem corpo; retorna `200` com o registro. Repetições retornam o mesmo resultado; execução inexistente retorna `404` e estado inválido, `409`.
-- `POST /api/v1/execucoes/{osId}/inicio`: inicia uma execução `AGENDADA`, sem corpo. Retorna `200` com o registro; uma repetição com estado `EM_EXECUCAO` devolve o registro existente. Outros estados retornam `409`; execução inexistente, `404`.
-
-Exemplo de resposta após início:
-
-```json
-{"osId":"123","status":"EM_EXECUCAO","sagaId":"saga-123","itens":[{"tipo":"PECA","itemId":"filtro-oleo","quantidade":1}],"agendadaEm":"2026-11-02T14:00:00Z","iniciadaEm":"2026-11-02T15:00:00Z","concluidaEm":null}
-```
-
-O início grava a transição e a outbox na mesma transação. O evento `ExecucaoIniciada` usa `operationId` e `causationId` determinísticos derivados da OS; seu payload contém `status: EM_EXECUCAO`, `iniciadaEm`, `orcamentoId`, `versao` e `pagamentoId`. O evento `ExecucaoAgendada` passa a conter `status: AGENDADA`; rejeições continuam informando o motivo, pois não há execução criada. O publicador pode reenviar mensagens e a ordem de entrega entre eventos não é garantida: o OS Service deve lidar com duplicatas e eventos fora de ordem. A conclusão também grava a mudança de estado e a outbox juntas. O contrato e a sincronização de status seguem sujeitos à validação do grupo.
-
-## Cancelamento da execução — implementação nesta branch
-
-O OS Service envia `CancelarExecucao` para `execucao-comandos`. A execução deve pertencer à mesma saga. Este contrato é provisório e precisa ser validado com o grupo.
+### Exemplo completo
 
 ```json
 {
@@ -299,113 +234,252 @@ O OS Service envia `CancelarExecucao` para `execucao-comandos`. A execução dev
 }
 ```
 
-A mesma `operationId` deve ser mantida nas tentativas da mesma solicitação. Em `AGENDADA`, o serviço devolve as peças, altera o estado para `CANCELADA` e registra o resultado na outbox na mesma transação. Em `EM_EXECUCAO` ou `CONCLUIDA`, não devolve peças e registra a recusa. Para uma execução já `CANCELADA`, outra operação recebe confirmação sem devolver o estoque novamente. Repetir a mesma operação não gera outra devolução ou outro registro de resultado.
+### Campos
 
-O OS Service recebe um destes eventos em `execucao-resultados`, com o envelope habitual (`schemaVersion`, `messageId`, `operationId`, `type`, `sagaId`, `osId`, `causationId`, `occurredAt`):
+São os mesmos campos do envelope da seção 4, **sem `payload`**, com `type` igual a `CancelarExecucao`. O `sagaId` precisa ser o mesmo da execução que foi agendada.
 
-- `ExecucaoCancelada`: payload `{"status":"CANCELADA","orcamentoId":"orc-123","versao":2,"pagamentoId":"pag-123"}`.
-- `CancelamentoExecucaoRecusado`: payload `{"motivo":"ESTADO_NAO_PERMITE_CANCELAMENTO","orcamentoId":"orc-123","versao":2,"pagamentoId":"pag-123"}`.
+### O que acontece
 
-O `causationId` da resposta é o `messageId` do comando. A outbox pode reenviar mensagens; o OS deve tratar duplicatas. Execução inexistente, saga divergente e falhas técnicas não geram confirmação: o comando fica sujeito a novas tentativas e à DLQ. O resultado desejado para execução inexistente permanece para alinhamento com o grupo. A ordem entre cancelamento e estorno é responsabilidade do OS Service e ainda precisa ser acordada.
-
-
-## Dicionário dos atributos das mensagens
-
-Os campos abaixo formam o envelope dos comandos e eventos. Os tipos e validações indicados são os do código atual; os exemplos são provisórios e devem ser alinhados entre os serviços.
-
-| Campo | Tipo | Significado e validação |
+| Estado atual da execução | O que o Execução faz | Evento enviado ao OS |
 | --- | --- | --- |
-| `schemaVersion` | inteiro | Versão do contrato. Os comandos recebidos exigem `1`. |
-| `messageId` | string UUID | Identifica a mensagem. Nos comandos recebidos deve ser um UUID válido; nos eventos é gerado pelo Execução Service. |
-| `operationId` | string | Identifica a operação de negócio. Deve ser preenchido e mantido na repetição da mesma operação. Use um valor distinto para cada ação e OS, inclusive entre tipos de comando. |
-| `type` | string | Tipo da mensagem, por exemplo `AgendarExecucao` ou `ExecucaoConcluida`. O consumidor aceita os tipos de comando documentados. |
-| `sagaId` | string | Identificador que correlaciona as etapas da saga. Obrigatório nos comandos; no cancelamento deve corresponder ao da execução. |
-| `osId` | string | Identificador da OS. Obrigatório nos comandos; é a referência usada para localizar a execução. |
-| `causationId` | string ou nulo | Identifica o que originou a mensagem. O código atual não o exige nos comandos. Para respostas a comandos, o evento usa o `messageId` recebido; nos eventos de início e conclusão usa a identidade gerada da ação. |
-| `occurredAt` | string ISO-8601 | Horário da mensagem. Nos comandos deve ser um instante válido, por exemplo `2026-11-02T14:00:00Z`; os eventos são gerados em UTC. |
-| `payload` | objeto | Dados específicos da mensagem. Obrigatório em `AgendarExecucao`; não é usado em `CancelarExecucao`. Os eventos incluem o objeto conforme seu tipo. |
+| `AGENDADA` | Devolve ao estoque as peças reservadas, muda para `CANCELADA` (tudo na mesma transação) | `ExecucaoCancelada` |
+| `CANCELADA` (já cancelada antes) | Não devolve estoque de novo | `ExecucaoCancelada` |
+| `EM_EXECUCAO` ou `CONCLUIDA` | Não cancela, não devolve peças | `CancelamentoExecucaoRecusado` com `motivo: ESTADO_NAO_PERMITE_CANCELAMENTO` |
 
-### Campos de negócio
+Reenviar o mesmo `operationId` não devolve estoque de novo nem gera outro evento.
 
-| Campo | Onde aparece | Significado |
+### Quando **não** há resposta (nova tentativa → DLQ)
+
+- **Execução inexistente** para a `osId` (por exemplo, o agendamento foi rejeitado ou nunca chegou). Hoje isso é tratado como erro, não como "nada a cancelar". Ver [pontos em aberto](#10-pontos-em-aberto-para-validar).
+- `sagaId` diferente do da execução.
+- `operationId` reutilizado com `osId` ou `sagaId` diferentes.
+- JSON inválido ou falha técnica.
+
+---
+
+## 6. Eventos de resposta
+
+O Execução publica em `execucao-resultados` um evento para cada resultado. O **OS Service lê essa fila**, deduplica e decide o que fazer com a OS e com a Saga.
+
+> O Execução informa o estado **da execução**. Quem decide o estado **da OS** (e se precisa estornar pagamento, por exemplo) é o OS Service.
+
+### Envelope (igual para todos os eventos)
+
+| Campo | Tipo | Significado |
 | --- | --- | --- |
-| `orcamentoId` | Agendamento e resultados | Identifica o orçamento aprovado; obrigatório no comando de agendamento. |
-| `versao` | Agendamento e resultados | No agendamento e nos eventos, identifica a versão do orçamento e deve ser positiva no comando. Em diagnósticos, `versao` identifica a revisão dos itens; são conceitos distintos. |
-| `pagamentoId` | Agendamento e resultados | Identifica o pagamento confirmado; obrigatório no agendamento. |
-| `itens` | Diagnóstico, cotação e agendamento | Lista dos serviços e peças. Em comandos de agendamento são aceitos de 1 a 20 itens, sem duplicar tipo e identificador. |
-| `tipo` | Item | `PECA` ou `SERVICO`. Somente peças participam da reserva e devolução de estoque. |
-| `itemId` | Item ou evento de rejeição | Identificador do item no catálogo. Na rejeição, indica a peça identificada como indisponível. |
-| `quantidade` | Item | Quantidade inteira positiva solicitada. |
-| `status` | Diagnóstico, execução e eventos de sucesso | Estado registrado pelo Execução Service, por exemplo `AGENDADA`, `EM_EXECUCAO`, `CONCLUIDA` ou `CANCELADA`. O estado da OS é de responsabilidade do OS Service. |
-| `motivo` | Eventos de recusa | Código para o motivo, como `ESTOQUE_INSUFICIENTE` ou `ESTADO_NAO_PERMITE_CANCELAMENTO`. |
-| `iniciadaEm`, `concluidaEm` | Execução e eventos | Horários do início e da conclusão do trabalho; na resposta HTTP podem ser nulos antes da respectiva ação. |
-| `agendadaEm` | Execução HTTP | Horário em que o agendamento foi registrado. |
-| `versaoEsperada` | Atualização HTTP do diagnóstico | Versão lida antes da alteração; se divergente, a atualização retorna conflito. |
-| `precoUnitario` | Catálogo e cotação | Preço por unidade; o catálogo aceita valor não negativo com até duas casas decimais. |
-| `ativo` | Catálogo | Indica se o item está ativo para consulta e reserva. |
-| `quantidadeEstoque` | Catálogo | Quantidade disponível de peça; obrigatória e não negativa para `PECA`, nula para `SERVICO`. |
-| `nome` | Catálogo e cotação | Nome descritivo do item. |
-| `moeda`, `geradaEm` | Cotação | Moeda e instante da consulta de preços. |
-| `atualizadoEm` | Diagnóstico | Instante da última atualização do diagnóstico. |
+| `schemaVersion` | inteiro | Sempre `1`. |
+| `messageId` | UUID | Identifica o evento. É **determinístico** (calculado a partir de `type` + `operationId`): o mesmo evento reenviado tem o mesmo `messageId`. Use-o para deduplicar. |
+| `operationId` | texto | Para respostas a comandos, é o `operationId` do comando. Para início e conclusão, é gerado pelo Execução (`iniciar-execucao-<uuid>` e `concluir-execucao-<uuid>`, derivados da OS). |
+| `type` | texto | Tipo do evento (tabela abaixo). |
+| `sagaId` | texto | O `sagaId` recebido no agendamento. |
+| `osId` | texto | A OS a que o evento se refere. |
+| `causationId` | texto | Nas respostas a comandos, o `messageId` do comando. Em início e conclusão, igual ao `operationId` do evento. |
+| `occurredAt` | texto (ISO-8601) | Quando o Execução gerou o evento, UTC. |
+| `payload` | objeto | Dados do evento (veja abaixo). |
 
-## Exemplos de chamadas HTTP
+### Tipos de evento
 
-Os exemplos assumem serviço na porta `8080` e que o DynamoDB configurado está disponível. Substitua o endereço pelo ambiente usado pelo grupo. As rotas ainda não possuem autenticação/autorização implementadas; o controle de acesso precisa ser definido antes da integração.
+| `type` | Quando ocorre | `payload` |
+| --- | --- | --- |
+| `ExecucaoAgendada` | Agendamento aceito e peças reservadas | `status` (`AGENDADA`), `orcamentoId`, `versao`, `pagamentoId` |
+| `ExecucaoRejeitada` | Agendamento recusado por estoque insuficiente | `orcamentoId`, `versao`, `pagamentoId`, `motivo` (`ESTOQUE_INSUFICIENTE`), `itemId` |
+| `ExecucaoIniciada` | Mecânico iniciou o trabalho (HTTP) | `status` (`EM_EXECUCAO`), `iniciadaEm`, `orcamentoId`, `versao`, `pagamentoId` |
+| `ExecucaoConcluida` | Mecânico concluiu o trabalho (HTTP) | `status` (`CONCLUIDA`), `iniciadaEm`, `concluidaEm`, `orcamentoId`, `versao`, `pagamentoId` |
+| `ExecucaoCancelada` | Cancelamento aceito | `status` (`CANCELADA`), `orcamentoId`, `versao`, `pagamentoId` |
+| `CancelamentoExecucaoRecusado` | Cancelamento negado (já em execução ou concluída) | `motivo` (`ESTADO_NAO_PERMITE_CANCELAMENTO`), `orcamentoId`, `versao`, `pagamentoId` |
 
-```bash
-# Cadastrar peça
-curl -i -X POST http://localhost:8080/api/v1/catalogo \
-  -H 'Content-Type: application/json' \
-  -d '{"tipo":"PECA","itemId":"filtro-oleo","nome":"Filtro de óleo","precoUnitario":45.50,"ativo":true,"quantidadeEstoque":10}'
+Significado dos campos do payload: `orcamentoId`, `versao` e `pagamentoId` repetem o que veio no `AgendarExecucao`, para o OS correlacionar sem precisar consultar nada. `iniciadaEm` e `concluidaEm` são os horários do trabalho (permitem medir duração, como no monólito).
 
-# Iniciar diagnóstico e substituir seus itens
-curl -i -X POST http://localhost:8080/api/v1/diagnosticos/123/inicio
-curl -i -X PUT http://localhost:8080/api/v1/diagnosticos/123/itens \
-  -H 'Content-Type: application/json' \
-  -d '{"versaoEsperada":1,"itens":[{"tipo":"PECA","itemId":"filtro-oleo","quantidade":1}]}'
+### Exemplos
 
-# Consultar diagnóstico e preços atuais
-curl -i http://localhost:8080/api/v1/diagnosticos/123
-curl -i -X POST http://localhost:8080/api/v1/cotacoes \
-  -H 'Content-Type: application/json' \
-  -d '{"itens":[{"tipo":"PECA","itemId":"filtro-oleo","quantidade":1}]}'
+`ExecucaoAgendada`:
 
-# Consultar a fila de trabalho; iniciar e concluir uma execução já agendada
-curl -i http://localhost:8080/api/v1/execucoes
-curl -i http://localhost:8080/api/v1/execucoes/123
-curl -i -X POST http://localhost:8080/api/v1/execucoes/123/inicio
-curl -i -X POST http://localhost:8080/api/v1/execucoes/123/conclusao
+```json
+{
+  "schemaVersion": 1,
+  "messageId": "aaa4c87e-ef3c-3d38-b566-c23381e44071",
+  "operationId": "agendar-os-123-orcamento-v2",
+  "type": "ExecucaoAgendada",
+  "sagaId": "saga-123",
+  "osId": "123",
+  "causationId": "02539ee2-c754-4bb7-b178-4b328de9dbd5",
+  "occurredAt": "2026-11-02T14:00:01Z",
+  "payload": { "status": "AGENDADA", "orcamentoId": "orc-123", "versao": 2, "pagamentoId": "pag-123" }
+}
 ```
 
-Essas chamadas HTTP não enviam o comando `AgendarExecucao`: ele chega pela fila SQS após o pagamento. Para que o exemplo de execução funcione, é necessário que o agendamento correspondente já tenha sido consumido.
+`ExecucaoRejeitada` (mesmo envelope, `type` e `payload` diferentes):
 
-### Respostas e erros HTTP
+```json
+{
+  "type": "ExecucaoRejeitada",
+  "payload": { "orcamentoId": "orc-123", "versao": 2, "pagamentoId": "pag-123", "motivo": "ESTOQUE_INSUFICIENTE", "itemId": "filtro-oleo" }
+}
+```
 
-| Código | Uso no código atual |
+`ExecucaoIniciada` e `ExecucaoConcluida` (payloads):
+
+```json
+{ "status": "EM_EXECUCAO", "iniciadaEm": "2026-11-02T15:00:00Z", "orcamentoId": "orc-123", "versao": 2, "pagamentoId": "pag-123" }
+```
+
+```json
+{ "status": "CONCLUIDA", "iniciadaEm": "2026-11-02T15:00:00Z", "concluidaEm": "2026-11-02T17:30:00Z", "orcamentoId": "orc-123", "versao": 2, "pagamentoId": "pag-123" }
+```
+
+`ExecucaoCancelada` e `CancelamentoExecucaoRecusado` (payloads):
+
+```json
+{ "status": "CANCELADA", "orcamentoId": "orc-123", "versao": 2, "pagamentoId": "pag-123" }
+```
+
+```json
+{ "motivo": "ESTADO_NAO_PERMITE_CANCELAMENTO", "orcamentoId": "orc-123", "versao": 2, "pagamentoId": "pag-123" }
+```
+
+### Sugestão de como o OS pode reagir (decisão do OS)
+
+| Evento | Possível ação do orquestrador |
 | --- | --- |
-| `200` | Consultas e operações de diagnóstico, início ou conclusão retornam os dados correspondentes. |
-| `204` | Cadastro de item do catálogo aceito, sem corpo. |
-| `400` | Dados de negócio inválidos, incluindo campos inválidos ou item de cotação ausente/inativo. |
-| `404` | Diagnóstico ou execução não encontrados. |
-| `409` | Item duplicado, versão de diagnóstico conflitante ou estado de execução incompatível. |
+| `ExecucaoAgendada` | Seguir a Saga; OS aguarda a execução. |
+| `ExecucaoRejeitada` | Compensar: estornar o pagamento (via Billing) e marcar a OS como falha. |
+| `ExecucaoIniciada` | Marcar a OS como em execução (se for essa a regra do grupo). |
+| `ExecucaoConcluida` | Marcar a OS como `CONCLUIDA` e seguir para a entrega. |
+| `ExecucaoCancelada` | Prosseguir com o estorno/encerramento da OS. |
+| `CancelamentoExecucaoRecusado` | Tratar como falha de compensação (a execução já começou ou terminou). |
 
-Erros tratados usam `ProblemDetail`, com informações como `status` e `detail`. Erros de infraestrutura e erros de desserialização podem produzir outras respostas; não devem ser interpretados como rejeição de negócio.
+### Como o OS deve consumir
 
-## Configuração necessária para as filas
+1. Leia da fila `execucao-resultados` e **deduplique por `messageId`** (o mesmo evento pode chegar mais de uma vez).
+2. Não assuma ordem: `ExecucaoIniciada` pode chegar depois de `ExecucaoConcluida`. Use `iniciadaEm`/`concluidaEm` e o estado atual da Saga para decidir.
+3. Só apague a mensagem da fila depois de processar com sucesso; se falhar, deixe voltar. Após 3 recebimentos ela vai para `execucao-resultados-dlq`.
+4. Correlacione por `sagaId` e `osId`.
 
-| Variável | Finalidade | Padrão |
-| --- | --- | --- |
-| `AWS_REGION` | Região dos clientes AWS. | `us-east-1` |
-| `DYNAMODB_TABLE_NAME` | Nome da tabela do serviço. | `execucao_service` |
-| `DYNAMODB_ENDPOINT_URL` | Endpoint opcional para DynamoDB local. | vazio |
-| `SQS_ENDPOINT_URL` | Endpoint opcional para SQS local. | vazio |
-| `SQS_EXECUCAO_COMANDOS_URL` | URL da fila que Execução consome. | vazio |
-| `SQS_CONSUMER_ENABLED` | Habilita a leitura dos comandos; requer a URL da fila. | `false` |
-| `SQS_CONSUMER_POLL_DELAY_MS` | Intervalo entre chamadas do consumidor, em milissegundos. | `5000` |
-| `SQS_EXECUCAO_RESULTADOS_URL` | URL da fila para publicar resultados. | vazio |
-| `OUTBOX_PUBLISHER_ENABLED` | Habilita o publicador; requer a URL da fila de resultados. | `false` |
-| `OUTBOX_POLL_DELAY_MS` | Intervalo entre leituras da outbox, em milissegundos. | `5000` |
+---
 
-A tabela, as filas, as DLQs, credenciais e permissões precisam existir no ambiente. Habilitar os componentes e definir URLs não cria esses recursos.
+## 7. Reenvio, duplicatas e falhas: tabela de decisão
 
-O Terraform propõe três recebimentos antes do envio à DLQ, configuráveis por `sqs_max_receive_count`. O valor, a existência das filas na AWS e a divisão de responsabilidade entre os repositórios devem ser confirmados com o Pedro.
+| Situação | O que fazer / o que acontece |
+| --- | --- |
+| OS não recebeu resposta do agendamento e quer tentar de novo | Reenviar com o **mesmo `operationId`** e os mesmos dados. Nada é reservado em duplicidade. |
+| OS quer tentar agendar de novo depois de `ExecucaoRejeitada` | Usar **novo `operationId`** (o antigo devolve a mesma rejeição). |
+| SQS entrega o mesmo comando duas vezes | O Execução reconhece pelo `operationId` e responde uma vez. |
+| Execução publica o mesmo evento duas vezes | O OS deduplica por `messageId`. |
+| Comando malformado ou dados incoerentes | Falha; após 3 tentativas vai para `execucao-comandos-dlq`. Corrigir e reenviar com novo `messageId` (e, se os dados mudaram, novo `operationId`). |
+| Cancelamento chega antes do agendamento ser processado | Execução inexistente: falha e nova tentativa (pode funcionar depois que o agendamento for processado, mas pode ir para a DLQ). |
+
+---
+
+## 8. HTTP para OS Service e Billing
+
+- **Local:** `http://localhost:8080`. **No cluster:** serviço `execucao-service` no namespace `oficina-ms`, porta `8080` (`http://execucao-service.oficina-ms:8080`, `ClusterIP`, acessível só dentro do cluster).
+- Corpo e resposta em JSON (`Content-Type: application/json`).
+- **Autenticação:** ainda não implementada; será combinada com o Gateway.
+- **Erros** vêm em formato `ProblemDetail`, por exemplo `{"status":404,"detail":"Diagnóstico não encontrado para a OS 123"}`. Códigos: `400` dados inválidos, `404` não encontrado, `409` conflito.
+
+### OS Service: ler o diagnóstico
+
+`GET /api/v1/diagnosticos/{osId}` → `200`:
+
+```json
+{
+  "osId": "123",
+  "versao": 2,
+  "status": "EM_DIAGNOSTICO",
+  "itens": [
+    { "tipo": "SERVICO", "itemId": "troca-oleo", "quantidade": 1 },
+    { "tipo": "PECA", "itemId": "filtro-oleo", "quantidade": 1 }
+  ],
+  "atualizadoEm": "2026-11-02T14:00:00Z"
+}
+```
+
+| Campo | Significado |
+| --- | --- |
+| `versao` | Revisão da lista de itens; cresce a cada alteração feita pelo mecânico. Guarde junto com o orçamento: se mudar depois, o orçamento ficou desatualizado. |
+| `itens` | Serviços e peças, **só id e quantidade, sem preço** (o preço vem da cotação). |
+| `status` | Hoje sempre `EM_DIAGNOSTICO`. |
+
+`404` se o mecânico ainda não iniciou o diagnóstico daquela OS.
+
+### Billing: consultar preços
+
+`POST /api/v1/cotacoes`, corpo com os itens do diagnóstico:
+
+```json
+{ "itens": [ { "tipo": "PECA", "itemId": "filtro-oleo", "quantidade": 2 } ] }
+```
+
+→ `200`:
+
+```json
+{
+  "moeda": "BRL",
+  "geradaEm": "2026-11-02T14:00:00Z",
+  "itens": [
+    { "tipo": "PECA", "itemId": "filtro-oleo", "nome": "Filtro de óleo", "quantidade": 2, "precoUnitario": 45.50 }
+  ]
+}
+```
+
+| Campo | Significado |
+| --- | --- |
+| `precoUnitario` | Preço **atual** do catálogo, por unidade, em reais. O Billing deve **congelar** esse valor no orçamento, porque o catálogo pode mudar depois. |
+| `geradaEm` | Momento da consulta. |
+
+Regras: de 1 a 20 itens, sem repetir `tipo`+`itemId`. A cotação **não** cria orçamento nem reserva estoque. `400` se algum item não existir ou estiver inativo no catálogo.
+
+### Rotas usadas pelo mecânico/operador (não pelo OS nem pelo Billing)
+
+| Rota | Função |
+| --- | --- |
+| `POST /api/v1/catalogo` | Cadastrar peça ou serviço |
+| `POST /api/v1/diagnosticos/{osId}/inicio` | Iniciar o diagnóstico |
+| `PUT /api/v1/diagnosticos/{osId}/itens` | Substituir os itens (com `versaoEsperada`) |
+| `GET /api/v1/execucoes` e `GET /api/v1/execucoes/{osId}` | Ver a fila de trabalho |
+| `POST /api/v1/execucoes/{osId}/inicio` | Iniciar o trabalho (gera `ExecucaoIniciada`) |
+| `POST /api/v1/execucoes/{osId}/conclusao` | Concluir o trabalho (gera `ExecucaoConcluida`) |
+
+Estas rotas, com exemplos de `curl`, estão em [funcionamento-do-servico.md](funcionamento-do-servico.md).
+
+---
+
+## 9. Roteiro para testar a integração
+
+Passo a passo para validar o fluxo de ponta a ponta com o Execução rodando:
+
+1. **Cadastrar uma peça:** `POST /api/v1/catalogo` com `{"tipo":"PECA","itemId":"filtro-oleo","nome":"Filtro de óleo","precoUnitario":45.50,"ativo":true,"quantidadeEstoque":10}`.
+2. **Diagnóstico:** `POST /api/v1/diagnosticos/123/inicio` e depois `PUT /api/v1/diagnosticos/123/itens` com `{"versaoEsperada":1,"itens":[{"tipo":"PECA","itemId":"filtro-oleo","quantidade":1}]}`.
+3. **(OS)** `GET /api/v1/diagnosticos/123` e **(Billing)** `POST /api/v1/cotacoes`.
+4. **(OS)** Enviar `AgendarExecucao` para `execucao-comandos` (exemplo da seção 4). Esperado: evento `ExecucaoAgendada` em `execucao-resultados`; estoque da peça cai para 9; `GET /api/v1/execucoes/123` mostra `AGENDADA`.
+5. **Repetição:** reenviar o mesmo JSON. Esperado: estoque continua 9.
+6. **Estoque insuficiente:** enviar outro agendamento (outra OS e outro `operationId`) pedindo mais peças do que o saldo. Esperado: `ExecucaoRejeitada` com `ESTOQUE_INSUFICIENTE`.
+7. **Cancelamento:** enviar `CancelarExecucao` para a OS 123. Esperado: `ExecucaoCancelada` e estoque de volta a 10.
+8. **Recusa:** agendar outra OS, iniciar (`POST .../inicio`) e então cancelar. Esperado: `CancelamentoExecucaoRecusado`.
+9. **Conclusão:** em uma execução em andamento, `POST .../conclusao`. Esperado: `ExecucaoConcluida`.
+
+Lembrete: o consumo de comandos e a publicação de eventos só funcionam quando o Execução está com `SQS_CONSUMER_ENABLED=true`, `OUTBOX_PUBLISHER_ENABLED=true` e as URLs das filas configuradas.
+
+---
+
+## 10. Pontos em aberto para validar
+
+Perguntas ao **Gabriel Souza (OS Service):**
+
+1. Confirmar que o OS preenche e envia o `sagaId` em todos os comandos, e que é o mesmo do início ao fim da Saga.
+2. Como será o `operationId` do agendamento e do cancelamento (o padrão sugerido está na seção 2)?
+3. Quando a OS passa para `EM_EXECUCAO`: após o pagamento ou ao receber `ExecucaoIniciada`? O Execução publica `ExecucaoIniciada` quando o mecânico começa.
+4. Cancelamento de execução **inexistente**: preferem que o Execução responda algo (por exemplo, "nada a cancelar") em vez de falhar e ir para a DLQ?
+5. Ordem entre cancelamento da execução e estorno do pagamento na compensação.
+6. O OS vai deduplicar os eventos por `messageId` e tolerar ordem trocada?
+
+Perguntas ao **Gabriel Ramos (Billing):**
+
+1. O Billing consulta `POST /cotacoes` ao gerar o orçamento e congela os preços? Há uma nova versão de orçamento quando o diagnóstico muda?
+2. Quem informa ao OS os itens aprovados que vão no `AgendarExecucao`: os mesmos da cotação?
+
+Perguntas à infraestrutura (**Pedro**):
+
+1. URLs finais das quatro filas e quem é dono do Terraform delas.
+2. Permissões da LabRole para os pods (DynamoDB e SQS) e como o OS acessa as filas do Execução.
+3. Como o tráfego HTTP entre OS/Billing e o Execução será roteado e autenticado (Gateway).
