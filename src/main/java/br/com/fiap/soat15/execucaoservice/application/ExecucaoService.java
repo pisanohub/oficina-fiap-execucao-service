@@ -6,12 +6,15 @@ import br.com.fiap.soat15.execucaoservice.domain.model.Cotacao;
 import br.com.fiap.soat15.execucaoservice.domain.model.AgendamentoExecucao;
 import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
 import br.com.fiap.soat15.execucaoservice.contract.CancelarExecucaoCommand;
+import br.com.fiap.soat15.execucaoservice.domain.model.AtualizacaoItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCotado;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
+import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.HashSet;
 import java.util.List;
@@ -19,6 +22,8 @@ import java.util.Set;
 
 @Service
 public class ExecucaoService {
+    private static final int LIMITE_ESTOQUE = 1_000_000;
+
     private final ExecucaoRepository repository;
     private final Clock clock;
 
@@ -87,6 +92,42 @@ public class ExecucaoService {
         repository.salvarItemCatalogo(item);
     }
 
+    public List<ItemCatalogo> listarCatalogo(TipoItem tipo, Boolean ativo) {
+        return repository.listarItensCatalogo(tipo, ativo);
+    }
+
+    public ItemCatalogo consultarItemCatalogo(TipoItem tipo, String itemId) {
+        validarItemId(tipo, itemId);
+        return repository.buscarItemCatalogo(tipo, itemId.trim())
+                .orElseThrow(() -> new ItemCatalogoNaoEncontradoException(tipo, itemId.trim()));
+    }
+
+    public ItemCatalogo atualizarItemCatalogo(TipoItem tipo, String itemId, String nome,
+                                              BigDecimal precoUnitario, Boolean ativo) {
+        validarItemId(tipo, itemId);
+        if (ativo == null) {
+            throw new IllegalArgumentException("ativo é obrigatório");
+        }
+        return repository.atualizarItemCatalogo(tipo, itemId.trim(),
+                new AtualizacaoItemCatalogo(nome, precoUnitario, ativo));
+    }
+
+    public ItemCatalogo reporEstoque(TipoItem tipo, String itemId, int quantidade) {
+        validarPeca(tipo, itemId);
+        if (quantidade <= 0 || quantidade > LIMITE_ESTOQUE) {
+            throw new IllegalArgumentException("quantidade deve estar entre 1 e " + LIMITE_ESTOQUE);
+        }
+        return repository.reporEstoque(itemId.trim(), quantidade);
+    }
+
+    public ItemCatalogo ajustarEstoque(TipoItem tipo, String itemId, Integer quantidadeEstoque) {
+        validarPeca(tipo, itemId);
+        if (quantidadeEstoque == null || quantidadeEstoque < 0 || quantidadeEstoque > LIMITE_ESTOQUE) {
+            throw new IllegalArgumentException("quantidadeEstoque deve estar entre 0 e " + LIMITE_ESTOQUE);
+        }
+        return repository.ajustarEstoque(itemId.trim(), quantidadeEstoque);
+    }
+
     public Cotacao cotar(List<ItemSolicitado> itens) {
         validarItens(itens);
         List<ItemCotado> cotados = itens.stream().map(item -> {
@@ -96,6 +137,19 @@ public class ExecucaoService {
             return new ItemCotado(item.tipo(), item.itemId(), catalogo.nome(), item.quantidade(), catalogo.precoUnitario());
         }).toList();
         return new Cotacao("BRL", clock.instant(), cotados);
+    }
+
+    private void validarItemId(TipoItem tipo, String itemId) {
+        if (tipo == null || itemId == null || itemId.isBlank()) {
+            throw new IllegalArgumentException("tipo e itemId são obrigatórios");
+        }
+    }
+
+    private void validarPeca(TipoItem tipo, String itemId) {
+        validarItemId(tipo, itemId);
+        if (tipo != TipoItem.PECA) {
+            throw new IllegalArgumentException("Serviço não possui estoque");
+        }
     }
 
     private void validarOsId(String osId) {

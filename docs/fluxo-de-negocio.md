@@ -92,6 +92,9 @@ Observações sobre o fluxo:
 
 | Gatilho | Estado antes | Estado depois | Estoque | Evento publicado |
 | --- | --- | --- | --- | --- |
+| `POST /catalogo/PECA/{itemId}/estoque/reposicao` | Estoque *n* | Estoque *n + quantidade* | **Aumenta** | — |
+| `PUT /catalogo/PECA/{itemId}/estoque` | Estoque *n* | Estoque definido | Sobrescreve | — |
+| `PUT /catalogo/{tipo}/{itemId}` com `ativo: false` | Item ativo | Item inativo (recusado em diagnóstico, cotação e agendamento) | Sem alteração | — |
 | `POST /diagnosticos/{osId}/inicio` | (inexistente) | Diagnóstico `EM_DIAGNOSTICO` v1 | — | — |
 | `POST /diagnosticos/{osId}/inicio` de novo | Diagnóstico existente | Mesmo diagnóstico, sem mudança | — | — |
 | `PUT /diagnosticos/{osId}/itens` | v *n* | v *n+1* | — | — |
@@ -149,6 +152,8 @@ Mensagens inválidas ou incoerentes **não geram evento**. Voltam para a fila e,
 | `PUT` de itens em diagnóstico que não foi iniciado | `404` |
 | `PUT` ou cotação com item inexistente ou inativo | `400` |
 | Cadastrar item de catálogo que já existe | `409` |
+| Consultar, atualizar ou repor estoque de item inexistente | `404` |
+| Repor estoque com quantidade fora de 1 a 1.000.000, ou repor/ajustar estoque de serviço | `400` |
 
 ---
 

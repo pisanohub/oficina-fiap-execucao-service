@@ -4,6 +4,7 @@ import br.com.fiap.soat15.execucaoservice.application.ExecucaoRepository;
 import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
 import br.com.fiap.soat15.execucaoservice.contract.CancelarExecucaoCommand;
 import br.com.fiap.soat15.execucaoservice.domain.model.AgendamentoExecucao;
+import br.com.fiap.soat15.execucaoservice.domain.model.AtualizacaoItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
 import br.com.fiap.soat15.execucaoservice.domain.model.ExecucaoTrabalho;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
@@ -85,4 +86,23 @@ public class DynamoExecucaoRepository implements ExecucaoRepository {
         return catalogo.buscarItemCatalogo(tipo, itemId);
     }
 
+    @Override
+    public List<ItemCatalogo> listarItensCatalogo(TipoItem tipo, Boolean ativo) {
+        return catalogo.listarItensCatalogo(tipo, ativo);
+    }
+
+    @Override
+    public ItemCatalogo atualizarItemCatalogo(TipoItem tipo, String itemId, AtualizacaoItemCatalogo atualizacao) {
+        return catalogo.atualizarItemCatalogo(tipo, itemId, atualizacao);
+    }
+
+    @Override
+    public ItemCatalogo reporEstoque(String itemId, int quantidade) {
+        return catalogo.reporEstoque(itemId, quantidade);
+    }
+
+    @Override
+    public ItemCatalogo ajustarEstoque(String itemId, int quantidadeEstoque) {
+        return catalogo.ajustarEstoque(itemId, quantidadeEstoque);
+    }
 }
