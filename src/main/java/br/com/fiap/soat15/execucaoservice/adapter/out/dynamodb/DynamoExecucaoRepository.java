@@ -89,6 +89,9 @@ public class DynamoExecucaoRepository implements ExecucaoRepository {
         outbox.put("osId", texto(osId));
         outbox.put("causationId", texto(comando.messageId()));
         outbox.put("occurredAt", texto(agora.toString()));
+        outbox.put("orcamentoId", texto(payload.orcamentoId()));
+        outbox.put("versaoOrcamento", numero(payload.versao()));
+        outbox.put("pagamentoId", texto(payload.pagamentoId()));
         outbox.put("published", AttributeValue.builder().bool(false).build());
 
         List<TransactWriteItem> writes = new ArrayList<>();
