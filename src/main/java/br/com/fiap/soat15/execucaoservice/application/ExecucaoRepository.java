@@ -5,6 +5,7 @@ import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
 import br.com.fiap.soat15.execucaoservice.domain.model.AgendamentoExecucao;
 import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
 import br.com.fiap.soat15.execucaoservice.contract.CancelarExecucaoCommand;
+import br.com.fiap.soat15.execucaoservice.domain.model.AtualizacaoItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
@@ -35,4 +36,12 @@ public interface ExecucaoRepository {
     void salvarItemCatalogo(ItemCatalogo item);
 
     Optional<ItemCatalogo> buscarItemCatalogo(TipoItem tipo, String itemId);
+
+    List<ItemCatalogo> listarItensCatalogo(TipoItem tipo, Boolean ativo);
+
+    ItemCatalogo atualizarItemCatalogo(TipoItem tipo, String itemId, AtualizacaoItemCatalogo atualizacao);
+
+    ItemCatalogo reporEstoque(String itemId, int quantidade);
+
+    ItemCatalogo ajustarEstoque(String itemId, int quantidadeEstoque);
 }

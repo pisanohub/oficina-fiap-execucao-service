@@ -51,19 +51,43 @@ Arquitetura em camadas, estilo hexagonal (`br.com.fiap.soat15.execucaoservice`):
 
 Todas as rotas ficam sob `/api/v1`. **Nenhuma exige autenticação hoje.** Erros usam `ProblemDetail` (RFC 7807): `400` dados inválidos, `404` não encontrado, `409` conflito de estado/versão/duplicidade.
 
-### Catálogo
+### Catálogo e estoque
 
 | Método e rota | Função | Respostas |
 | --- | --- | --- |
 | `POST /api/v1/catalogo` | Cadastra peça ou serviço. | `204`; `409` item já existe; `400` inválido |
+| `GET /api/v1/catalogo?tipo=&ativo=` | Lista itens; filtros opcionais por `tipo` (`PECA`/`SERVICO`) e `ativo` (`true`/`false`). Ordenado por tipo e `itemId`. | `200`; `400` filtro inválido |
+| `GET /api/v1/catalogo/{tipo}/{itemId}` | Consulta um item, com o estoque atual da peça. | `200`; `404`; `400` tipo inválido |
+| `PUT /api/v1/catalogo/{tipo}/{itemId}` | Atualiza `nome`, `precoUnitario` e `ativo`. **Não** altera o estoque. Para inativar, `ativo: false`. | `200`; `404`; `400` |
+| `POST /api/v1/catalogo/PECA/{itemId}/estoque/reposicao` | **Soma** `quantidade` (1 a 1.000.000) ao estoque, de forma atômica. | `200`; `404`; `400` |
+| `PUT /api/v1/catalogo/PECA/{itemId}/estoque` | **Define** o estoque (`quantidadeEstoque`, 0 a 1.000.000), por exemplo após contagem física. | `200`; `404`; `400` |
 
-Corpo:
+Todas as rotas que alteram devolvem o item atualizado. Serviços não têm estoque: reposição ou ajuste em `SERVICO` retorna `400`. Corpos de exemplo:
+
+```json
+{"nome":"Filtro de óleo premium","precoUnitario":55.90,"ativo":true}
+```
+
+```json
+{"quantidade":5}
+```
+
+```json
+{"quantidadeEstoque":10}
+```
+
+Cuidados:
+
+- Inativar um item faz o diagnóstico e a cotação o recusarem (`400`) e **faz o comando `AgendarExecucao` que o contém falhar** (a mensagem vai para a DLQ, sem evento ao OS). Evite inativar peças que tenham orçamento aprovado aguardando agendamento.
+- O ajuste absoluto sobrescreve o valor e pode apagar uma reserva feita ao mesmo tempo. Prefira a reposição para entradas de estoque.
+
+Cadastro (`POST`): corpo de exemplo:
 
 ```json
 {"tipo":"PECA","itemId":"filtro-oleo","nome":"Filtro de óleo","precoUnitario":45.50,"ativo":true,"quantidadeEstoque":10}
 ```
 
-Regras: `PECA` exige `quantidadeEstoque` inteira ≥ 0; `SERVICO` exige que seja nula. Preço ≥ 0 com no máximo 2 casas.
+Regras do cadastro: `PECA` exige `quantidadeEstoque` inteira ≥ 0; `SERVICO` exige que seja nula. Preço ≥ 0 com no máximo 2 casas (vale também para a atualização).
 
 ### Diagnóstico
 

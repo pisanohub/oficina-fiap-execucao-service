@@ -3,11 +3,13 @@ package br.com.fiap.soat15.execucaoservice.adapter.in.web;
 import java.util.NoSuchElementException;
 import br.com.fiap.soat15.execucaoservice.application.DiagnosticoNaoEncontradoException;
 import br.com.fiap.soat15.execucaoservice.application.ItemCatalogoExistenteException;
+import br.com.fiap.soat15.execucaoservice.application.ItemCatalogoNaoEncontradoException;
 import br.com.fiap.soat15.execucaoservice.application.VersaoDiagnosticoConflitanteException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice
 public class ExecucaoExceptionHandler {
@@ -24,6 +26,16 @@ public class ExecucaoExceptionHandler {
     @ExceptionHandler(DiagnosticoNaoEncontradoException.class)
     ProblemDetail naoEncontrado(DiagnosticoNaoEncontradoException exception) {
         return problema(HttpStatus.NOT_FOUND, exception.getMessage());
+    }
+
+    @ExceptionHandler(ItemCatalogoNaoEncontradoException.class)
+    ProblemDetail itemNaoEncontrado(ItemCatalogoNaoEncontradoException exception) {
+        return problema(HttpStatus.NOT_FOUND, exception.getMessage());
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ProblemDetail parametroInvalido(MethodArgumentTypeMismatchException exception) {
+        return problema(HttpStatus.BAD_REQUEST, "Valor inválido para " + exception.getName() + ": " + exception.getValue());
     }
 
     @ExceptionHandler({VersaoDiagnosticoConflitanteException.class, ItemCatalogoExistenteException.class})

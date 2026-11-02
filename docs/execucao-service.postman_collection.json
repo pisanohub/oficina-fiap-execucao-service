@@ -6,8 +6,8 @@
   },
   "item": [
     {
-      "name": "0 - Preparação: catálogo (mecânico/operador)",
-      "description": "Cadastra a peça e o serviço usados nos demais passos. Se o item já existir, a resposta é 409 (esperado ao repetir).",
+      "name": "0 - Catálogo e estoque (operador)",
+      "description": "Cadastra e mantém peças e serviços (listar, consultar, atualizar, repor e ajustar estoque). Se o item já existir no cadastro, a resposta é 409 (esperado ao repetir).",
       "item": [
         {
           "name": "Cadastrar peça",
@@ -95,6 +95,219 @@
                 "exec": [
                   "pm.test('Status esperado: 204, 409', function () {",
                   "    pm.expect([204, 409]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar catálogo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo"
+              ]
+            },
+            "description": "Filtros opcionais: ?tipo=PECA|SERVICO e ?ativo=true|false. Ordenado por tipo e itemId. Usa Scan (sem paginação)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar item do catálogo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo/PECA/{{pecaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo",
+                "PECA",
+                "{{pecaId}}"
+              ]
+            },
+            "description": "404 se o item não existir naquele tipo. Mostra o estoque atual da peça."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Atualizar item (nome, preço, ativo)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo/PECA/{{pecaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo",
+                "PECA",
+                "{{pecaId}}"
+              ]
+            },
+            "description": "Não altera o estoque. Informe nome, precoUnitario (até 2 casas) e ativo. Para inativar, ativo=false: o item deixa de aceitar diagnóstico, cotação e novos agendamentos (comando para peça inativa vai para a DLQ).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Filtro de óleo\",\n  \"precoUnitario\": 45.5,\n  \"ativo\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Repor estoque (soma)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo/PECA/{{pecaId}}/estoque/reposicao",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo",
+                "PECA",
+                "{{pecaId}}",
+                "estoque",
+                "reposicao"
+              ]
+            },
+            "description": "Soma 'quantidade' (1 a 1.000.000) ao estoque de forma atômica. Só para peças.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantidade\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ajustar estoque (valor absoluto)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo/PECA/{{pecaId}}/estoque",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo",
+                "PECA",
+                "{{pecaId}}",
+                "estoque"
+              ]
+            },
+            "description": "Define o estoque (0 a 1.000.000), por exemplo após contagem física. Cuidado: sobrescreve reservas feitas em paralelo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantidadeEstoque\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
                   "});"
                 ]
               }
@@ -1387,6 +1600,140 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"itens\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 400', function () {",
+                  "    pm.expect([400]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar item inexistente (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo/PECA/nao-existe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo",
+                "PECA",
+                "nao-existe"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 404', function () {",
+                  "    pm.expect([404]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Repor estoque com quantidade inválida (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo/PECA/{{pecaId}}/estoque/reposicao",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo",
+                "PECA",
+                "{{pecaId}}",
+                "estoque",
+                "reposicao"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantidade\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 400', function () {",
+                  "    pm.expect([400]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Repor estoque de serviço (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo/SERVICO/{{servicoId}}/estoque/reposicao",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo",
+                "SERVICO",
+                "{{servicoId}}",
+                "estoque",
+                "reposicao"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantidade\": 1\n}",
               "options": {
                 "raw": {
                   "language": "json"
