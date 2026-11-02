@@ -122,7 +122,29 @@ public class DynamoExecucaoRepository implements ExecucaoRepository {
             if (motivos != null) {
                 for (int i = 0; i < pecas.size() && i < motivos.size(); i++) {
                     if ("ConditionalCheckFailed".equals(motivos.get(i).code())) {
-                        throw new PecaIndisponivelException(pecas.get(i).itemId(), conflito);
+                        String itemId = pecas.get(i).itemId();
+                        Map<String, AttributeValue> peca = buscar(chaveCatalogo(TipoItem.PECA, itemId));
+                        if (peca.isEmpty() || !peca.containsKey("ativo") || !Boolean.TRUE.equals(peca.get("ativo").bool())
+                                || !peca.containsKey("quantidadeEstoque")) {
+                            throw new IllegalStateException("Peça ausente, inativa ou sem estoque cadastrado: " + itemId, conflito);
+                        }
+                        if (Long.parseLong(peca.get("quantidadeEstoque").n()) >= pecas.get(i).quantidade()) {
+                            throw conflito;
+                        }
+                        operacao.put("resultado", texto("REJEITADA"));
+                        operacao.put("itemIndisponivel", texto(itemId));
+                        outbox.put("type", texto("ExecucaoRejeitada"));
+                        outbox.put("motivo", texto("ESTOQUE_INSUFICIENTE"));
+                        outbox.put("itemId", texto(itemId));
+                        try {
+                            dynamo.transactWriteItems(TransactWriteItemsRequest.builder()
+                                    .transactItems(putSeAusente(operacao), putSeAusente(outbox)).build());
+                        } catch (TransactionCanceledException corrida) {
+                            Map<String, AttributeValue> resultado = buscar(chaveOperacao);
+                            if (!resultado.isEmpty()) return mapearAgendamentoValidado(resultado, comando);
+                            throw corrida;
+                        }
+                        throw new PecaIndisponivelException(itemId, conflito);
                     }
                 }
                 if (motivos.size() > pecas.size()
@@ -169,6 +191,9 @@ public class DynamoExecucaoRepository implements ExecucaoRepository {
                 || !agendamento.pagamentoId().equals(comando.payload().pagamentoId())
                 || !itensDaOperacao(item).equals(Set.copyOf(comando.payload().itens()))) {
             throw new IllegalArgumentException("operationId reutilizado com dados diferentes");
+        }
+        if (item.containsKey("resultado") && "REJEITADA".equals(item.get("resultado").s())) {
+            throw new PecaIndisponivelException(item.get("itemIndisponivel").s(), null);
         }
         return agendamento;
     }
