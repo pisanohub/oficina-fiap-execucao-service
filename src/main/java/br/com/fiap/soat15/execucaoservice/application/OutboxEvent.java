@@ -1,5 +1,8 @@
 package br.com.fiap.soat15.execucaoservice.application;
 
+import br.com.fiap.soat15.execucaoservice.domain.model.StatusExecucao;
+import br.com.fiap.soat15.execucaoservice.domain.model.TipoEventoExecucao;
+
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
@@ -23,25 +26,25 @@ public record OutboxEvent(String operationId, String type, String sagaId, String
     }
 
     private Map<String, Object> payload() {
-        if ("ExecucaoRejeitada".equals(type)) {
+        if (TipoEventoExecucao.REJEITADA.codigo().equals(type)) {
             return Map.of("orcamentoId", orcamentoId, "versao", versaoOrcamento,
                     "pagamentoId", pagamentoId, "motivo", motivo, "itemId", itemId);
         }
-        if ("ExecucaoCancelada".equals(type)) {
-            return Map.of("status", "CANCELADA", "orcamentoId", orcamentoId, "versao", versaoOrcamento, "pagamentoId", pagamentoId);
+        if (TipoEventoExecucao.CANCELADA.codigo().equals(type)) {
+            return Map.of("status", StatusExecucao.CANCELADA.name(), "orcamentoId", orcamentoId, "versao", versaoOrcamento, "pagamentoId", pagamentoId);
         }
-        if ("CancelamentoExecucaoRecusado".equals(type)) {
+        if (TipoEventoExecucao.CANCELAMENTO_RECUSADO.codigo().equals(type)) {
             return Map.of("motivo", motivo, "orcamentoId", orcamentoId, "versao", versaoOrcamento, "pagamentoId", pagamentoId);
         }
-        if ("ExecucaoConcluida".equals(type)) {
+        if (TipoEventoExecucao.CONCLUIDA.codigo().equals(type)) {
             return Map.of("orcamentoId", orcamentoId, "versao", versaoOrcamento, "pagamentoId", pagamentoId,
-                    "status", "CONCLUIDA", "iniciadaEm", iniciadaEm.toString(), "concluidaEm", occurredAt.toString());
+                    "status", StatusExecucao.CONCLUIDA.name(), "iniciadaEm", iniciadaEm.toString(), "concluidaEm", occurredAt.toString());
         }
-        if ("ExecucaoIniciada".equals(type)) {
+        if (TipoEventoExecucao.INICIADA.codigo().equals(type)) {
             return Map.of("orcamentoId", orcamentoId, "versao", versaoOrcamento, "pagamentoId", pagamentoId,
-                    "status", "EM_EXECUCAO", "iniciadaEm", occurredAt.toString());
+                    "status", StatusExecucao.EM_EXECUCAO.name(), "iniciadaEm", occurredAt.toString());
         }
         return Map.of("orcamentoId", orcamentoId, "versao", versaoOrcamento, "pagamentoId", pagamentoId,
-                "status", "AGENDADA");
+                "status", StatusExecucao.AGENDADA.name());
     }
 }

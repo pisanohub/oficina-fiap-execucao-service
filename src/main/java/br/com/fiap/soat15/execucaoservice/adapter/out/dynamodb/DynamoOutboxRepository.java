@@ -35,7 +35,7 @@ public class DynamoOutboxRepository implements OutboxRepository {
             ScanRequest.Builder requisicao = ScanRequest.builder().tableName(tableName)
                     .filterExpression("begins_with(pk, :prefixo) AND #published = :false")
                     .expressionAttributeNames(Map.of("#published", "published"))
-                    .expressionAttributeValues(Map.of(":prefixo", texto("OUTBOX#"),
+                    .expressionAttributeValues(Map.of(":prefixo", texto(DynamoKeys.PREFIXO_OUTBOX),
                             ":false", AttributeValue.builder().bool(false).build()))
                     .limit(100);
             if (!cursor.isEmpty()) requisicao.exclusiveStartKey(cursor);
@@ -87,7 +87,7 @@ public class DynamoOutboxRepository implements OutboxRepository {
     }
 
     private Map<String, AttributeValue> chave(OutboxEvent evento) {
-        return Map.of("pk", texto("OUTBOX#" + evento.operationId()), "sk", texto("RESULTADO"));
+        return DynamoKeys.outbox(evento.operationId());
     }
 
     private AttributeValue texto(String valor) {

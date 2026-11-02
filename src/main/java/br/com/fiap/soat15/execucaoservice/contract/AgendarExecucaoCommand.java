@@ -19,7 +19,7 @@ public record AgendarExecucaoCommand(
         Payload payload
 ) {
     public AgendarExecucaoCommand {
-        if (schemaVersion != 1 || !"AgendarExecucao".equals(type) || vazio(messageId)
+        if (schemaVersion != 1 || !TipoComandoExecucao.AGENDAR.codigo().equals(type) || vazio(messageId)
                 || vazio(occurredAt)
                 || vazio(operationId) || vazio(sagaId) || vazio(osId) || payload == null) {
             throw new IllegalArgumentException("Envelope AgendarExecucao v1 inválido");
