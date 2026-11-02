@@ -27,6 +27,11 @@ public record OutboxEvent(String operationId, String type, String sagaId, String
             return Map.of("orcamentoId", orcamentoId, "versao", versaoOrcamento,
                     "pagamentoId", pagamentoId, "motivo", motivo, "itemId", itemId);
         }
-        return Map.of("orcamentoId", orcamentoId, "versao", versaoOrcamento, "pagamentoId", pagamentoId);
+        if ("ExecucaoIniciada".equals(type)) {
+            return Map.of("orcamentoId", orcamentoId, "versao", versaoOrcamento, "pagamentoId", pagamentoId,
+                    "status", "EM_EXECUCAO", "iniciadaEm", occurredAt.toString());
+        }
+        return Map.of("orcamentoId", orcamentoId, "versao", versaoOrcamento, "pagamentoId", pagamentoId,
+                "status", "AGENDADA");
     }
 }

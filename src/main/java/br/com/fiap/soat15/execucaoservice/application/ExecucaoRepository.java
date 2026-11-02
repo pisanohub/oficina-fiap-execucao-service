@@ -1,5 +1,6 @@
 package br.com.fiap.soat15.execucaoservice.application;
 
+import br.com.fiap.soat15.execucaoservice.domain.model.ExecucaoTrabalho;
 import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
 import br.com.fiap.soat15.execucaoservice.domain.model.AgendamentoExecucao;
 import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
@@ -13,6 +14,12 @@ import java.util.Optional;
 
 public interface ExecucaoRepository {
     AgendamentoExecucao agendarExecucao(AgendarExecucaoCommand comando, Instant agora);
+
+    List<ExecucaoTrabalho> listarExecucoes();
+
+    Optional<ExecucaoTrabalho> buscarExecucao(String osId);
+
+    ExecucaoTrabalho iniciarExecucao(String osId, Instant agora);
 
     Diagnostico iniciarDiagnostico(String osId, Instant agora);
 
