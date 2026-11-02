@@ -1,5 +1,7 @@
 package br.com.fiap.soat15.execucaoservice.application;
 
+import br.com.fiap.soat15.execucaoservice.domain.model.ExecucaoTrabalho;
+import java.util.NoSuchElementException;
 import br.com.fiap.soat15.execucaoservice.domain.model.Cotacao;
 import br.com.fiap.soat15.execucaoservice.domain.model.AgendamentoExecucao;
 import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
@@ -30,6 +32,20 @@ public class ExecucaoService {
         }
         validarItens(comando.payload().itens());
         return repository.agendarExecucao(comando, clock.instant());
+    }
+
+    public List<ExecucaoTrabalho> listarExecucoes() {
+        return repository.listarExecucoes();
+    }
+
+    public ExecucaoTrabalho consultarExecucao(String osId) {
+        validarOsId(osId);
+        return repository.buscarExecucao(osId.trim()).orElseThrow(() -> new NoSuchElementException("Execução não encontrada: " + osId));
+    }
+
+    public ExecucaoTrabalho iniciarExecucao(String osId) {
+        validarOsId(osId);
+        return repository.iniciarExecucao(osId.trim(), clock.instant());
     }
 
     public Diagnostico iniciarDiagnostico(String osId) {

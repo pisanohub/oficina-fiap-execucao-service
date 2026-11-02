@@ -1,5 +1,6 @@
 package br.com.fiap.soat15.execucaoservice.adapter.in.web;
 
+import java.util.NoSuchElementException;
 import br.com.fiap.soat15.execucaoservice.application.DiagnosticoNaoEncontradoException;
 import br.com.fiap.soat15.execucaoservice.application.ItemCatalogoExistenteException;
 import br.com.fiap.soat15.execucaoservice.application.VersaoDiagnosticoConflitanteException;
@@ -10,6 +11,16 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class ExecucaoExceptionHandler {
+    @ExceptionHandler(NoSuchElementException.class)
+    ProblemDetail execucaoNaoEncontrada(NoSuchElementException exception) {
+        return problema(HttpStatus.NOT_FOUND, exception.getMessage());
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    ProblemDetail estadoInvalido(IllegalStateException exception) {
+        return problema(HttpStatus.CONFLICT, exception.getMessage());
+    }
+
     @ExceptionHandler(DiagnosticoNaoEncontradoException.class)
     ProblemDetail naoEncontrado(DiagnosticoNaoEncontradoException exception) {
         return problema(HttpStatus.NOT_FOUND, exception.getMessage());

@@ -1,5 +1,10 @@
 package br.com.fiap.soat15.execucaoservice.adapter.out.dynamodb;
 
+import br.com.fiap.soat15.execucaoservice.domain.model.ExecucaoTrabalho;
+import java.util.NoSuchElementException;
+import java.util.UUID;
+import java.nio.charset.StandardCharsets;
+import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 import br.com.fiap.soat15.execucaoservice.application.DiagnosticoNaoEncontradoException;
 import br.com.fiap.soat15.execucaoservice.application.ExecucaoJaAgendadaException;
 import br.com.fiap.soat15.execucaoservice.application.PecaIndisponivelException;
@@ -154,6 +159,77 @@ public class DynamoExecucaoRepository implements ExecucaoRepository {
             }
             throw conflito;
         }
+    }
+
+    @Override
+    public List<ExecucaoTrabalho> listarExecucoes() {
+        List<ExecucaoTrabalho> resultado = new ArrayList<>();
+        Map<String, AttributeValue> cursor = Map.of();
+        do {
+            var request = ScanRequest.builder().tableName(tableName)
+                    .filterExpression("begins_with(pk, :prefixo) AND sk = :sk")
+                    .expressionAttributeValues(Map.of(":prefixo", texto("OS#"), ":sk", texto("EXECUCAO")));
+            if (cursor != null && !cursor.isEmpty()) request.exclusiveStartKey(cursor);
+            var pagina = dynamo.scan(request.build());
+            for (var item : pagina.items()) resultado.add(mapearExecucao(item));
+            cursor = pagina.lastEvaluatedKey();
+        } while (cursor != null && !cursor.isEmpty());
+        return resultado;
+    }
+
+    @Override
+    public Optional<ExecucaoTrabalho> buscarExecucao(String osId) {
+        var item = buscar(chaveExecucao(osId));
+        return item.isEmpty() ? Optional.empty() : Optional.of(mapearExecucao(item));
+    }
+
+    @Override
+    public ExecucaoTrabalho iniciarExecucao(String osId, Instant agora) {
+        var chave = chaveExecucao(osId);
+        var item = buscar(chave);
+        if (item.isEmpty()) throw new NoSuchElementException("Execução não encontrada: " + osId);
+        if ("EM_EXECUCAO".equals(item.get("status").s())) return mapearExecucao(item);
+        if (!"AGENDADA".equals(item.get("status").s())) throw new IllegalStateException("Execução não pode ser iniciada no estado atual");
+        String operacao = "iniciar-execucao-" + UUID.nameUUIDFromBytes(osId.getBytes(StandardCharsets.UTF_8));
+        Map<String, AttributeValue> evento = new HashMap<>(Map.of("pk", texto("OUTBOX#" + operacao), "sk", texto("RESULTADO")));
+        evento.put("type", texto("ExecucaoIniciada"));
+        evento.put("operationId", texto(operacao));
+        evento.put("sagaId", item.get("sagaId"));
+        evento.put("osId", texto(osId));
+        evento.put("causationId", texto(operacao));
+        evento.put("occurredAt", texto(agora.toString()));
+        evento.put("orcamentoId", item.get("orcamentoId"));
+        evento.put("versaoOrcamento", item.get("versaoOrcamento"));
+        evento.put("pagamentoId", item.get("pagamentoId"));
+        evento.put("published", AttributeValue.builder().bool(false).build());
+        var atualizar = TransactWriteItem.builder().update(Update.builder().tableName(tableName).key(chave)
+                .updateExpression("SET #status = :iniciada, iniciadaEm = :agora")
+                .conditionExpression("#status = :agendada")
+                .expressionAttributeNames(Map.of("#status", "status"))
+                .expressionAttributeValues(Map.of(":iniciada", texto("EM_EXECUCAO"), ":agendada", texto("AGENDADA"), ":agora", texto(agora.toString())))
+                .build()).build();
+        try {
+            dynamo.transactWriteItems(TransactWriteItemsRequest.builder().transactItems(atualizar, putSeAusente(evento)).build());
+        } catch (TransactionCanceledException falha) {
+            var atual = buscar(chave);
+            if (!atual.isEmpty() && "EM_EXECUCAO".equals(atual.get("status").s())) return mapearExecucao(atual);
+            throw falha;
+        }
+        var atual = new HashMap<>(item);
+        atual.put("status", texto("EM_EXECUCAO"));
+        atual.put("iniciadaEm", texto(agora.toString()));
+        return mapearExecucao(atual);
+    }
+
+    private ExecucaoTrabalho mapearExecucao(Map<String, AttributeValue> item) {
+        var itens = item.get("itens").l().stream().map(valor -> {
+            var campos = valor.m();
+            return new ItemSolicitado(TipoItem.valueOf(campos.get("tipo").s()), campos.get("itemId").s(),
+                    Integer.parseInt(campos.get("quantidade").n()));
+        }).toList();
+        return new ExecucaoTrabalho(item.get("pk").s().substring(3),
+                item.get("status").s(), item.get("sagaId").s(), itens, Instant.parse(item.get("agendadoEm").s()),
+                item.containsKey("iniciadaEm") ? Instant.parse(item.get("iniciadaEm").s()) : null);
     }
 
     private TransactWriteItem putSeAusente(Map<String, AttributeValue> item) {

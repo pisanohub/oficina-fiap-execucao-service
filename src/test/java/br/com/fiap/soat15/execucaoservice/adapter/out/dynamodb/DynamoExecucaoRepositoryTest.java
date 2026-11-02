@@ -1,5 +1,7 @@
 package br.com.fiap.soat15.execucaoservice.adapter.out.dynamodb;
 
+import java.util.Arrays;
+import software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsResponse;
 import br.com.fiap.soat15.execucaoservice.application.ExecucaoJaAgendadaException;
 import br.com.fiap.soat15.execucaoservice.application.PecaIndisponivelException;
 import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
@@ -65,6 +67,22 @@ class DynamoExecucaoRepositoryTest {
     }
 
     @Test
+    void iniciarGravaEstadoEEventoNaMesmaTransacao() {
+        repository.agendarExecucao(comando(List.of(new ItemSolicitado(TipoItem.PECA, "filtro", 1))), agora);
+        var captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamo).transactWriteItems(captor.capture());
+        var execucao = captor.getValue().transactItems().get(1).put().item();
+        when(dynamo.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(execucao).build());
+        var iniciada = repository.iniciarExecucao("123", agora.plusSeconds(60));
+        assertThat(iniciada.status()).isEqualTo("EM_EXECUCAO");
+        assertThat(iniciada.iniciadaEm()).isEqualTo(agora.plusSeconds(60));
+        verify(dynamo, times(2)).transactWriteItems(captor.capture());
+        var transacao = captor.getAllValues().get(captor.getAllValues().size() - 1).transactItems();
+        assertThat(transacao.get(0).update().conditionExpression()).contains(":agendada");
+        assertThat(transacao.get(1).put().item().get("type").s()).isEqualTo("ExecucaoIniciada");
+    }
+
+    @Test
     void repeticaoDaMesmaOperacaoNaoReservaDeNovoERejeitaItensDiferentes() {
         AgendarExecucaoCommand original = comando(List.of(new ItemSolicitado(TipoItem.PECA, "filtro", 1)));
         repository.agendarExecucao(original, agora);
@@ -85,7 +103,7 @@ class DynamoExecucaoRepositoryTest {
     void estoqueInsuficienteGeraFalhaDeNegocioIdentificavel() {
         when(dynamo.transactWriteItems(any(TransactWriteItemsRequest.class)))
                 .thenThrow(cancelada("ConditionalCheckFailed", "None", "None", "None"))
-                .thenReturn(software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsResponse.builder().build());
+                .thenReturn(TransactWriteItemsResponse.builder().build());
         when(dynamo.getItem(any(GetItemRequest.class)))
                 .thenReturn(GetItemResponse.builder().build(), GetItemResponse.builder().build(),
                         GetItemResponse.builder().item(Map.of("ativo", AttributeValue.builder().bool(true).build(),
@@ -118,7 +136,7 @@ class DynamoExecucaoRepositoryTest {
 
     private TransactionCanceledException cancelada(String... codigos) {
         return TransactionCanceledException.builder().cancellationReasons(
-                java.util.Arrays.stream(codigos).map(codigo -> CancellationReason.builder().code(codigo).build())
+                Arrays.stream(codigos).map(codigo -> CancellationReason.builder().code(codigo).build())
                         .toList()).build();
     }
 

@@ -1,5 +1,6 @@
 package br.com.fiap.soat15.execucaoservice.application;
 
+import br.com.fiap.soat15.execucaoservice.domain.model.ExecucaoTrabalho;
 import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
 import br.com.fiap.soat15.execucaoservice.domain.model.AgendamentoExecucao;
 import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
@@ -126,6 +127,9 @@ class ExecucaoServiceTest {
     }
 
     private static class RepositorioEmMemoria implements ExecucaoRepository {
+        public List<ExecucaoTrabalho> listarExecucoes() { throw new UnsupportedOperationException(); }
+        public Optional<ExecucaoTrabalho> buscarExecucao(String osId) { throw new UnsupportedOperationException(); }
+        public ExecucaoTrabalho iniciarExecucao(String osId, Instant agora) { throw new UnsupportedOperationException(); }
         private final Map<String, Diagnostico> diagnosticos = new HashMap<>();
         private final Map<String, ItemCatalogo> catalogo = new HashMap<>();
         private AgendarExecucaoCommand comandoAgendado;

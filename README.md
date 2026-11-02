@@ -47,6 +47,9 @@ Variaveis de ambiente configuraveis (ver `src/main/resources/application.yaml`):
 | `SQS_ENDPOINT_URL` | vazio | Endpoint opcional do SQS local |
 | `DYNAMODB_TABLE_NAME` | `execucao_service` | Nome da tabela DynamoDB |
 | `SQS_EXECUCAO_RESULTADOS_URL` | vazio | URL da fila de resultados |
+| `SQS_EXECUCAO_COMANDOS_URL` | vazio | URL da fila de comandos |
+| `SQS_CONSUMER_ENABLED` | `false` | Ativa o consumidor após configurar a fila de comandos |
+| `SQS_CONSUMER_POLL_DELAY_MS` | `5000` | Intervalo entre leituras da fila de comandos |
 | `OUTBOX_PUBLISHER_ENABLED` | `false` | Ativa o publicador após configurar a fila |
 | `OUTBOX_POLL_DELAY_MS` | `5000` | Intervalo entre buscas na outbox |
 
@@ -63,12 +66,13 @@ e cotação já usa DynamoDB e as mesmas rotas HTTP em todos os ambientes. O con
 `AgendarExecucao` está tipado e documentado. O agendamento já reserva peças e grava
 execução, deduplicação e outbox em uma única transação DynamoDB. O publicador da outbox
 envia resultados para `execucao-resultados` quando as duas variáveis de SQS acima são
-configuradas. O consumo SQS, as rotas da fila de trabalho, a autenticação e o deploy
-integrado ainda estão pendentes.
+configuradas. O consumidor SQS recebe comandos quando habilitado. A consulta e o início das execuções
+estão disponíveis nesta branch. A conclusão, a autenticação e o deploy integrado
+ainda estão pendentes.
 
 Próximas etapas do serviço:
 
-- Consumo SQS da Saga e operação da fila de trabalho.
-- Autenticação/autorização das rotas e acesso interno entre serviços.
+- Conclusão da execução e publicação do evento correspondente.
+- Autenticação e autorização para operadores e serviços nas rotas `/api/v1`.
 - Infraestrutura DynamoDB/SQS no ambiente do grupo, cobertura mínima de 80%, BDD,
   quality gate e deploy automatizado. O CI atual ainda executa apenas build e testes.

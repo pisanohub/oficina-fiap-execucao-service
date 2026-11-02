@@ -1,5 +1,6 @@
 package br.com.fiap.soat15.execucaoservice.adapter.in.web;
 
+import br.com.fiap.soat15.execucaoservice.domain.model.ExecucaoTrabalho;
 import br.com.fiap.soat15.execucaoservice.application.ExecucaoService;
 import br.com.fiap.soat15.execucaoservice.domain.model.Cotacao;
 import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
@@ -23,6 +24,21 @@ public class ExecucaoController {
         this.service = service;
     }
 
+    @GetMapping("/api/v1/execucoes")
+    public List<ExecucaoTrabalho> listarExecucoes() {
+        return service.listarExecucoes();
+    }
+
+    @GetMapping("/api/v1/execucoes/{osId}")
+    public ExecucaoTrabalho consultarExecucao(@PathVariable String osId) {
+        return service.consultarExecucao(osId);
+    }
+
+    @PostMapping("/api/v1/execucoes/{osId}/inicio")
+    public ExecucaoTrabalho iniciarExecucao(@PathVariable String osId) {
+        return service.iniciarExecucao(osId);
+    }
+
     @PostMapping("/api/v1/catalogo")
     public ResponseEntity<Void> salvarItem(@RequestBody ItemCatalogo item) {
         service.salvarItemCatalogo(item);
@@ -39,12 +55,12 @@ public class ExecucaoController {
         return service.atualizarItens(osId, request.versaoEsperada(), request.itens());
     }
 
-    @GetMapping({"/api/v1/diagnosticos/{osId}", "/internal/v1/diagnosticos/{osId}"})
+    @GetMapping("/api/v1/diagnosticos/{osId}")
     public Diagnostico consultar(@PathVariable String osId) {
         return service.consultarDiagnostico(osId);
     }
 
-    @PostMapping("/internal/v1/cotacoes")
+    @PostMapping("/api/v1/cotacoes")
     public Cotacao cotar(@RequestBody CotacaoRequest request) {
         return service.cotar(request.itens());
     }
