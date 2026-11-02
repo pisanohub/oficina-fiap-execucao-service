@@ -6,7 +6,7 @@ import java.util.UUID;
 public record CancelarExecucaoCommand(int schemaVersion, String messageId, String operationId,
         String type, String sagaId, String osId, String causationId, String occurredAt) {
     public CancelarExecucaoCommand {
-        if (schemaVersion != 1 || !"CancelarExecucao".equals(type) || vazio(messageId)
+        if (schemaVersion != 1 || !TipoComandoExecucao.CANCELAR.codigo().equals(type) || vazio(messageId)
                 || vazio(operationId) || vazio(sagaId) || vazio(osId) || vazio(occurredAt)) {
             throw new IllegalArgumentException("Envelope CancelarExecucao v1 inválido");
         }
