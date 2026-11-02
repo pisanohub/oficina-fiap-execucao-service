@@ -76,7 +76,7 @@ Sugestão de mensagem para o Gabriel:
 
 ## SQS após pagamento
 
-O grupo escolheu quatro filas principais, com uma DLQ para cada uma:
+A topologia prevista tem quatro filas principais, com uma DLQ para cada uma. O Terraform deste serviço define as duas filas de Execução e suas DLQs; confirme com a equipe a posse dos recursos antes do deploy:
 
 | Fila principal | Publicador | Consumidor | DLQ |
 | --- | --- | --- | --- |
@@ -407,3 +407,5 @@ Erros tratados usam `ProblemDetail`, com informações como `status` e `detail`.
 | `OUTBOX_POLL_DELAY_MS` | Intervalo entre leituras da outbox, em milissegundos. | `5000` |
 
 A tabela, as filas, as DLQs, credenciais e permissões precisam existir no ambiente. Habilitar os componentes e definir URLs não cria esses recursos.
+
+O Terraform propõe três recebimentos antes do envio à DLQ, configuráveis por `sqs_max_receive_count`. O valor, a existência das filas na AWS e a divisão de responsabilidade entre os repositórios devem ser confirmados com o Pedro.
