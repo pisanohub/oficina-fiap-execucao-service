@@ -97,6 +97,11 @@ public class DynamoExecucaoRepository implements ExecucaoRepository {
     }
 
     @Override
+    public void inativarItemCatalogo(TipoItem tipo, String itemId) {
+        catalogo.inativarItemCatalogo(tipo, itemId);
+    }
+
+    @Override
     public ItemCatalogo reporEstoque(String itemId, int quantidade) {
         return catalogo.reporEstoque(itemId, quantidade);
     }

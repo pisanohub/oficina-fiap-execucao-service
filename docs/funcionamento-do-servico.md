@@ -56,16 +56,17 @@ Todas as rotas ficam sob `/api/v1`. **Nenhuma exige autenticação hoje.** Erros
 | Método e rota | Função | Respostas |
 | --- | --- | --- |
 | `POST /api/v1/catalogo` | Cadastra peça ou serviço. | `204`; `409` item já existe; `400` inválido |
-| `GET /api/v1/catalogo?tipo=&ativo=` | Lista itens; filtros opcionais por `tipo` (`PECA`/`SERVICO`) e `ativo` (`true`/`false`). Ordenado por tipo e `itemId`. | `200`; `400` filtro inválido |
+| `GET /api/v1/catalogo?tipo=&ativo=&nome=` | Lista itens; filtros opcionais por `tipo` (`PECA`/`SERVICO`), `ativo` (`true`/`false`) e `nome` (contém, sem diferenciar acento nem maiúsculas). Ordenado por tipo e `itemId`. | `200`; `400` filtro inválido |
 | `GET /api/v1/catalogo/{tipo}/{itemId}` | Consulta um item, com o estoque atual da peça. | `200`; `404`; `400` tipo inválido |
-| `PUT /api/v1/catalogo/{tipo}/{itemId}` | Atualiza `nome`, `precoUnitario` e `ativo`. **Não** altera o estoque. Para inativar, `ativo: false`. | `200`; `404`; `400` |
+| `PUT /api/v1/catalogo/{tipo}/{itemId}` | Atualiza `nome`, `descricao`, `precoUnitario`, `ativo` e (serviço) `tempoEstimadoMinutos`. Substitui os dados: `descricao` e `tempoEstimadoMinutos` ausentes são removidos. **Não** altera o estoque. | `200`; `404`; `400` |
+| `DELETE /api/v1/catalogo/{tipo}/{itemId}` | Soft delete: marca o item como inativo, sem apagar cadastro nem estoque. Repetir retorna `204`. Para reativar, `PUT` com `ativo: true`. | `204`; `404` |
 | `POST /api/v1/catalogo/PECA/{itemId}/estoque/reposicao` | **Soma** `quantidade` (1 a 1.000.000) ao estoque, de forma atômica. | `200`; `404`; `400` |
 | `PUT /api/v1/catalogo/PECA/{itemId}/estoque` | **Define** o estoque (`quantidadeEstoque`, 0 a 1.000.000), por exemplo após contagem física. | `200`; `404`; `400` |
 
 Todas as rotas que alteram devolvem o item atualizado. Serviços não têm estoque: reposição ou ajuste em `SERVICO` retorna `400`. Corpos de exemplo:
 
 ```json
-{"nome":"Filtro de óleo premium","precoUnitario":55.90,"ativo":true}
+{"nome":"Troca de óleo","descricao":"Inclui filtro","precoUnitario":95.00,"ativo":true,"tempoEstimadoMinutos":45}
 ```
 
 ```json
@@ -84,8 +85,10 @@ Cuidados:
 Cadastro (`POST`): corpo de exemplo:
 
 ```json
-{"tipo":"PECA","itemId":"filtro-oleo","nome":"Filtro de óleo","precoUnitario":45.50,"ativo":true,"quantidadeEstoque":10}
+{"tipo":"PECA","itemId":"filtro-oleo","nome":"Filtro de óleo","descricao":"Filtro original","precoUnitario":45.50,"ativo":true,"quantidadeEstoque":10}
 ```
+
+`descricao` (até 300 caracteres) é opcional em qualquer item; `tempoEstimadoMinutos` (inteiro maior que zero) é opcional e só vale para `SERVICO`. As respostas trazem os dois campos (`null` quando ausentes).
 
 Regras do cadastro: `PECA` exige `quantidadeEstoque` inteira ≥ 0; `SERVICO` exige que seja nula. Preço ≥ 0 com no máximo 2 casas (vale também para a atualização).
 

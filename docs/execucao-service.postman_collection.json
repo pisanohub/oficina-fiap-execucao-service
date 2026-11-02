@@ -30,10 +30,10 @@
                 "catalogo"
               ]
             },
-            "description": "204 criado; 409 se o item já existe. Peça exige quantidadeEstoque inteira >= 0.",
+            "description": "204 criado; 409 se o item já existe. Peça exige quantidadeEstoque inteira >= 0. descricao é opcional (até 300 caracteres).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"tipo\": \"PECA\",\n  \"itemId\": \"{{pecaId}}\",\n  \"nome\": \"Filtro de óleo\",\n  \"precoUnitario\": 45.5,\n  \"ativo\": true,\n  \"quantidadeEstoque\": 10\n}",
+              "raw": "{\n  \"tipo\": \"PECA\",\n  \"itemId\": \"{{pecaId}}\",\n  \"nome\": \"Filtro de óleo\",\n  \"descricao\": \"Filtro de óleo original\",\n  \"precoUnitario\": 45.5,\n  \"ativo\": true,\n  \"quantidadeEstoque\": 10\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -76,10 +76,10 @@
                 "catalogo"
               ]
             },
-            "description": "Serviço não tem estoque (não envie quantidadeEstoque).",
+            "description": "Serviço não tem estoque (não envie quantidadeEstoque). tempoEstimadoMinutos é opcional, só para serviço, e deve ser maior que zero.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"tipo\": \"SERVICO\",\n  \"itemId\": \"{{servicoId}}\",\n  \"nome\": \"Troca de óleo\",\n  \"precoUnitario\": 90.0,\n  \"ativo\": true\n}",
+              "raw": "{\n  \"tipo\": \"SERVICO\",\n  \"itemId\": \"{{servicoId}}\",\n  \"nome\": \"Troca de óleo\",\n  \"descricao\": \"Inclui filtro\",\n  \"precoUnitario\": 90.0,\n  \"ativo\": true,\n  \"tempoEstimadoMinutos\": 45\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -117,7 +117,39 @@
                 "catalogo"
               ]
             },
-            "description": "Filtros opcionais: ?tipo=PECA|SERVICO e ?ativo=true|false. Ordenado por tipo e itemId. Usa Scan (sem paginação)."
+            "description": "Filtros opcionais: ?tipo=PECA|SERVICO, ?ativo=true|false e ?nome= (contém, sem diferenciar acento nem maiúsculas). Ordenado por tipo e itemId. Usa Scan (sem paginação)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Buscar no catálogo por nome",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo?nome=oleo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo?nome=oleo"
+              ]
+            },
+            "description": "Encontra 'Filtro de óleo' e 'Troca de óleo' mesmo digitando sem acento."
           },
           "event": [
             {
@@ -193,7 +225,7 @@
             "description": "Não altera o estoque. Informe nome, precoUnitario (até 2 casas) e ativo. Para inativar, ativo=false: o item deixa de aceitar diagnóstico, cotação e novos agendamentos (comando para peça inativa vai para a DLQ).",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"nome\": \"Filtro de óleo\",\n  \"precoUnitario\": 45.5,\n  \"ativo\": true\n}",
+              "raw": "{\n  \"nome\": \"Filtro de óleo\",\n  \"descricao\": \"Filtro de óleo original\",\n  \"precoUnitario\": 45.5,\n  \"ativo\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -209,6 +241,134 @@
                 "exec": [
                   "pm.test('Status esperado: 200', function () {",
                   "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Atualizar serviço (descrição e tempo estimado)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo/SERVICO/{{servicoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo",
+                "SERVICO",
+                "{{servicoId}}"
+              ]
+            },
+            "description": "O PUT substitui os dados do item: descricao e tempoEstimadoMinutos ausentes são removidos.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Troca de óleo\",\n  \"descricao\": \"Inclui filtro\",\n  \"precoUnitario\": 90.0,\n  \"ativo\": true,\n  \"tempoEstimadoMinutos\": 45\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cadastrar peça descartável (para o teste de inativação)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"PECA\",\n  \"itemId\": \"{{pecaDescartavelId}}\",\n  \"nome\": \"Peça descartável\",\n  \"precoUnitario\": 1.0,\n  \"ativo\": true,\n  \"quantidadeEstoque\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 204, 409', function () {",
+                  "    pm.expect([204, 409]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Inativar item (soft delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo/PECA/{{pecaDescartavelId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo",
+                "PECA",
+                "{{pecaDescartavelId}}"
+              ]
+            },
+            "description": "Marca o item como inativo (não apaga o cadastro nem o estoque). Repetir também retorna 204; item inexistente retorna 404. Para reativar, use o PUT com ativo=true."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 204', function () {",
+                  "    pm.expect([204]).to.include(pm.response.code);",
                   "});"
                 ]
               }
@@ -1656,6 +1816,86 @@
           ]
         },
         {
+          "name": "Inativar item inexistente (404)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo/PECA/nao-existe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo",
+                "PECA",
+                "nao-existe"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 404', function () {",
+                  "    pm.expect([404]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cadastrar peça com tempo estimado (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"PECA\",\n  \"itemId\": \"x\",\n  \"nome\": \"X\",\n  \"precoUnitario\": 1.0,\n  \"ativo\": true,\n  \"quantidadeEstoque\": 1,\n  \"tempoEstimadoMinutos\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 400', function () {",
+                  "    pm.expect([400]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Repor estoque com quantidade inválida (400)",
           "request": {
             "method": "POST",
@@ -2278,6 +2518,11 @@
       "key": "servicoId",
       "value": "troca-oleo",
       "description": "Serviço do catálogo."
+    },
+    {
+      "key": "pecaDescartavelId",
+      "value": "peca-descartavel",
+      "description": "Peça usada só para demonstrar a inativação (DELETE)."
     },
     {
       "key": "diagVersao",

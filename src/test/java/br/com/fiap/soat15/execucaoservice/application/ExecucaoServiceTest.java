@@ -133,11 +133,11 @@ class ExecucaoServiceTest {
         service.salvarItemCatalogo(new ItemCatalogo(TipoItem.PECA, "filtro", "Filtro", new BigDecimal("25.00"), true, 3));
         service.salvarItemCatalogo(new ItemCatalogo(TipoItem.PECA, "velha", "Velha", new BigDecimal("5.00"), false, 1));
         service.salvarItemCatalogo(new ItemCatalogo(TipoItem.SERVICO, "troca", "Troca", new BigDecimal("90.00"), true, null));
-        assertThat(service.listarCatalogo(null, null)).hasSize(3);
-        assertThat(service.listarCatalogo(TipoItem.PECA, null)).extracting(ItemCatalogo::itemId)
+        assertThat(service.listarCatalogo(null, null, null)).hasSize(3);
+        assertThat(service.listarCatalogo(TipoItem.PECA, null, null)).extracting(ItemCatalogo::itemId)
                 .containsExactlyInAnyOrder("filtro", "velha");
-        assertThat(service.listarCatalogo(TipoItem.PECA, true)).extracting(ItemCatalogo::itemId).containsExactly("filtro");
-        assertThat(service.listarCatalogo(null, false)).extracting(ItemCatalogo::itemId).containsExactly("velha");
+        assertThat(service.listarCatalogo(TipoItem.PECA, true, null)).extracting(ItemCatalogo::itemId).containsExactly("filtro");
+        assertThat(service.listarCatalogo(null, false, null)).extracting(ItemCatalogo::itemId).containsExactly("velha");
     }
 
     @Test
@@ -154,7 +154,7 @@ class ExecucaoServiceTest {
     void atualizaDadosDoItemSemAlterarEstoque() {
         service.salvarItemCatalogo(new ItemCatalogo(TipoItem.PECA, "filtro", "Filtro", new BigDecimal("25.00"), true, 3));
         ItemCatalogo atualizado = service.atualizarItemCatalogo(TipoItem.PECA, "filtro", " Filtro novo ",
-                new BigDecimal("30.50"), false);
+                null, new BigDecimal("30.50"), false, null);
         assertThat(atualizado.nome()).isEqualTo("Filtro novo");
         assertThat(atualizado.precoUnitario()).isEqualByComparingTo("30.50");
         assertThat(atualizado.ativo()).isFalse();
@@ -163,13 +163,13 @@ class ExecucaoServiceTest {
 
     @Test
     void rejeitaAtualizacaoInvalidaDoItem() {
-        assertThatThrownBy(() -> service.atualizarItemCatalogo(TipoItem.PECA, "filtro", "Filtro", new BigDecimal("1.00"), null))
+        assertThatThrownBy(() -> service.atualizarItemCatalogo(TipoItem.PECA, "filtro", "Filtro", null, new BigDecimal("1.00"), null, null))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("ativo");
-        assertThatThrownBy(() -> service.atualizarItemCatalogo(TipoItem.PECA, "filtro", "Filtro", new BigDecimal("1.234"), true))
+        assertThatThrownBy(() -> service.atualizarItemCatalogo(TipoItem.PECA, "filtro", "Filtro", null, new BigDecimal("1.234"), true, null))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.atualizarItemCatalogo(TipoItem.PECA, "filtro", " ", new BigDecimal("1.00"), true))
+        assertThatThrownBy(() -> service.atualizarItemCatalogo(TipoItem.PECA, "filtro", " ", null, new BigDecimal("1.00"), true, null))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.atualizarItemCatalogo(TipoItem.PECA, "inexistente", "Filtro", new BigDecimal("1.00"), true))
+        assertThatThrownBy(() -> service.atualizarItemCatalogo(TipoItem.PECA, "inexistente", "Filtro", null, new BigDecimal("1.00"), true, null))
                 .isInstanceOf(ItemCatalogoNaoEncontradoException.class);
     }
 
@@ -203,6 +203,62 @@ class ExecucaoServiceTest {
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("não possui estoque");
         assertThatThrownBy(() -> service.ajustarEstoque(TipoItem.SERVICO, "troca", 1))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("não possui estoque");
+    }
+
+    @Test
+    void listaCatalogoPorNomeIgnorandoAcentosEMaiusculas() {
+        service.salvarItemCatalogo(new ItemCatalogo(TipoItem.SERVICO, "troca", "Troca de óleo", new BigDecimal("90.00"), true, null));
+        service.salvarItemCatalogo(new ItemCatalogo(TipoItem.PECA, "filtro", "Filtro de óleo", new BigDecimal("25.00"), true, 3));
+        service.salvarItemCatalogo(new ItemCatalogo(TipoItem.PECA, "pastilha", "Pastilha de freio", new BigDecimal("80.00"), true, 3));
+        assertThat(service.listarCatalogo(null, null, "OLEO")).extracting(ItemCatalogo::itemId)
+                .containsExactlyInAnyOrder("troca", "filtro");
+        assertThat(service.listarCatalogo(TipoItem.PECA, null, "  freio ")).extracting(ItemCatalogo::itemId)
+                .containsExactly("pastilha");
+        assertThat(service.listarCatalogo(null, null, "inexistente")).isEmpty();
+        assertThat(service.listarCatalogo(null, null, " ")).hasSize(3);
+    }
+
+    @Test
+    void atualizaDescricaoETempoEstimadoDoServico() {
+        service.salvarItemCatalogo(new ItemCatalogo(TipoItem.SERVICO, "troca", "Troca", new BigDecimal("90.00"), true, null));
+        ItemCatalogo atualizado = service.atualizarItemCatalogo(TipoItem.SERVICO, "troca", "Troca de óleo",
+                " Inclui filtro ", new BigDecimal("95.00"), true, 45);
+        assertThat(atualizado.descricao()).isEqualTo("Inclui filtro");
+        assertThat(atualizado.tempoEstimadoMinutos()).isEqualTo(45);
+    }
+
+    @Test
+    void pecaNaoAceitaTempoEstimadoETempoPrecisaSerPositivo() {
+        assertThatThrownBy(() -> service.atualizarItemCatalogo(TipoItem.PECA, "filtro", "Filtro", null,
+                new BigDecimal("1.00"), true, 10)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("tempo estimado");
+        assertThatThrownBy(() -> service.atualizarItemCatalogo(TipoItem.SERVICO, "troca", "Troca", null,
+                new BigDecimal("1.00"), true, 0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ItemCatalogo(TipoItem.PECA, "f", "F", null, new BigDecimal("1.00"), true, 1, 5))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ItemCatalogo(TipoItem.SERVICO, "s", "S", null, new BigDecimal("1.00"), true, null, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void descricaoLongaEhRejeitadaEDescricaoEmBrancoViraNula() {
+        String longa = "x".repeat(301);
+        assertThatThrownBy(() -> new ItemCatalogo(TipoItem.SERVICO, "s", "S", longa, new BigDecimal("1.00"), true, null, null))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("300");
+        assertThat(new ItemCatalogo(TipoItem.SERVICO, "s", "S", "   ", new BigDecimal("1.00"), true, null, null).descricao()).isNull();
+    }
+
+    @Test
+    void inativaItemDoCatalogoSemApagarOCadastro() {
+        service.salvarItemCatalogo(new ItemCatalogo(TipoItem.PECA, "filtro", "Filtro", new BigDecimal("25.00"), true, 3));
+        service.inativarItemCatalogo(TipoItem.PECA, " filtro ");
+        ItemCatalogo item = service.consultarItemCatalogo(TipoItem.PECA, "filtro");
+        assertThat(item.ativo()).isFalse();
+        assertThat(item.quantidadeEstoque()).isEqualTo(3);
+        assertThatThrownBy(() -> service.inativarItemCatalogo(TipoItem.PECA, "nada"))
+                .isInstanceOf(ItemCatalogoNaoEncontradoException.class);
+        assertThatThrownBy(() -> service.inativarItemCatalogo(TipoItem.PECA, " "))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static class RepositorioEmMemoria implements ExecucaoRepository {
@@ -266,10 +322,19 @@ class ExecucaoServiceTest {
         public ItemCatalogo atualizarItemCatalogo(TipoItem tipo, String itemId, AtualizacaoItemCatalogo atualizacao) {
             ItemCatalogo atual = buscarItemCatalogo(tipo, itemId)
                     .orElseThrow(() -> new ItemCatalogoNaoEncontradoException(tipo, itemId));
-            ItemCatalogo novo = new ItemCatalogo(tipo, itemId, atualizacao.nome(), atualizacao.precoUnitario(),
-                    atualizacao.ativo(), atual.quantidadeEstoque());
+            ItemCatalogo novo = new ItemCatalogo(tipo, itemId, atualizacao.nome(), atualizacao.descricao(),
+                    atualizacao.precoUnitario(), atualizacao.ativo(), atual.quantidadeEstoque(),
+                    atualizacao.tempoEstimadoMinutos());
             catalogo.put(tipo + "/" + itemId, novo);
             return novo;
+        }
+
+        @Override
+        public void inativarItemCatalogo(TipoItem tipo, String itemId) {
+            ItemCatalogo atual = buscarItemCatalogo(tipo, itemId)
+                    .orElseThrow(() -> new ItemCatalogoNaoEncontradoException(tipo, itemId));
+            catalogo.put(tipo + "/" + itemId, new ItemCatalogo(tipo, itemId, atual.nome(), atual.descricao(),
+                    atual.precoUnitario(), false, atual.quantidadeEstoque(), atual.tempoEstimadoMinutos()));
         }
 
         @Override
@@ -283,8 +348,8 @@ class ExecucaoServiceTest {
         public ItemCatalogo ajustarEstoque(String itemId, int quantidadeEstoque) {
             ItemCatalogo atual = buscarItemCatalogo(TipoItem.PECA, itemId)
                     .orElseThrow(() -> new ItemCatalogoNaoEncontradoException(TipoItem.PECA, itemId));
-            ItemCatalogo novo = new ItemCatalogo(TipoItem.PECA, itemId, atual.nome(), atual.precoUnitario(),
-                    atual.ativo(), quantidadeEstoque);
+            ItemCatalogo novo = new ItemCatalogo(TipoItem.PECA, itemId, atual.nome(), atual.descricao(),
+                    atual.precoUnitario(), atual.ativo(), quantidadeEstoque, null);
             catalogo.put("PECA/" + itemId, novo);
             return novo;
         }

@@ -15,9 +15,11 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -38,8 +40,8 @@ class ExecucaoControllerCatalogoTest {
 
     @Test
     void listaCatalogoComFiltros() throws Exception {
-        when(service.listarCatalogo(TipoItem.PECA, true)).thenReturn(List.of(filtro));
-        mvc.perform(get("/api/v1/catalogo?tipo=PECA&ativo=true"))
+        when(service.listarCatalogo(TipoItem.PECA, true, "filtro")).thenReturn(List.of(filtro));
+        mvc.perform(get("/api/v1/catalogo?tipo=PECA&ativo=true&nome=filtro"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].itemId").value("filtro"))
                 .andExpect(jsonPath("$[0].quantidadeEstoque").value(10));
@@ -64,17 +66,17 @@ class ExecucaoControllerCatalogoTest {
 
     @Test
     void atualizaItemPeloCorpoDaRequisicao() throws Exception {
-        when(service.atualizarItemCatalogo(eq(TipoItem.PECA), eq("filtro"), eq("Filtro novo"),
-                eq(new BigDecimal("30.50")), eq(false))).thenReturn(filtro);
+        when(service.atualizarItemCatalogo(eq(TipoItem.PECA), eq("filtro"), eq("Filtro novo"), eq("Premium"),
+                eq(new BigDecimal("30.50")), eq(false), eq(null))).thenReturn(filtro);
         mvc.perform(put("/api/v1/catalogo/PECA/filtro").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"nome\":\"Filtro novo\",\"precoUnitario\":30.50,\"ativo\":false}"))
+                        .content("{\"nome\":\"Filtro novo\",\"descricao\":\"Premium\",\"precoUnitario\":30.50,\"ativo\":false}"))
                 .andExpect(status().isOk());
-        verify(service).atualizarItemCatalogo(TipoItem.PECA, "filtro", "Filtro novo", new BigDecimal("30.50"), false);
+        verify(service).atualizarItemCatalogo(TipoItem.PECA, "filtro", "Filtro novo", "Premium", new BigDecimal("30.50"), false, null);
     }
 
     @Test
     void dadosInvalidosNaAtualizacaoRetornamBadRequest() throws Exception {
-        when(service.atualizarItemCatalogo(any(), any(), any(), any(), any()))
+        when(service.atualizarItemCatalogo(any(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(new IllegalArgumentException("ativo é obrigatório"));
         mvc.perform(put("/api/v1/catalogo/PECA/filtro").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"nome\":\"Filtro\",\"precoUnitario\":1.00}"))
@@ -100,5 +102,18 @@ class ExecucaoControllerCatalogoTest {
                 .thenThrow(new ItemCatalogoNaoEncontradoException(TipoItem.PECA, "nada"));
         mvc.perform(post("/api/v1/catalogo/PECA/nada/estoque/reposicao").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"quantidade\":1}")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void inativaItemComDeleteERetornaNoContent() throws Exception {
+        mvc.perform(delete("/api/v1/catalogo/PECA/filtro")).andExpect(status().isNoContent());
+        verify(service).inativarItemCatalogo(TipoItem.PECA, "filtro");
+    }
+
+    @Test
+    void deleteDeItemInexistenteRetornaNotFound() throws Exception {
+        doThrow(new ItemCatalogoNaoEncontradoException(TipoItem.PECA, "nada"))
+                .when(service).inativarItemCatalogo(TipoItem.PECA, "nada");
+        mvc.perform(delete("/api/v1/catalogo/PECA/nada")).andExpect(status().isNotFound());
     }
 }

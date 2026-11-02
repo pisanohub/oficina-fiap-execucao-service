@@ -83,7 +83,7 @@ class DynamoCatalogoRepositoryTest {
                 .attributes(peca("filtro", "Filtro novo", "30.50", false, "3")).build());
 
         ItemCatalogo atualizado = repository.atualizarItemCatalogo(TipoItem.PECA, "filtro",
-                new AtualizacaoItemCatalogo("Filtro novo", new BigDecimal("30.50"), false));
+                new AtualizacaoItemCatalogo("Filtro novo", null, new BigDecimal("30.50"), false, null));
 
         assertThat(atualizado.nome()).isEqualTo("Filtro novo");
         assertThat(atualizado.quantidadeEstoque()).isEqualTo(3);
@@ -100,7 +100,7 @@ class DynamoCatalogoRepositoryTest {
     void atualizacaoDeItemInexistenteFalhaComoNaoEncontrado() {
         when(dynamo.updateItem(any(UpdateItemRequest.class))).thenThrow(ConditionalCheckFailedException.builder().build());
         assertThatThrownBy(() -> repository.atualizarItemCatalogo(TipoItem.SERVICO, "x",
-                new AtualizacaoItemCatalogo("X", new BigDecimal("1.00"), true)))
+                new AtualizacaoItemCatalogo("X", null, new BigDecimal("1.00"), true, null)))
                 .isInstanceOf(ItemCatalogoNaoEncontradoException.class);
     }
 
@@ -138,5 +138,62 @@ class DynamoCatalogoRepositoryTest {
         when(dynamo.updateItem(any(UpdateItemRequest.class))).thenThrow(ConditionalCheckFailedException.builder().build());
         assertThatThrownBy(() -> repository.reporEstoque("nada", 1)).isInstanceOf(ItemCatalogoNaoEncontradoException.class);
         assertThatThrownBy(() -> repository.ajustarEstoque("nada", 1)).isInstanceOf(ItemCatalogoNaoEncontradoException.class);
+    }
+
+    @Test
+    void atualizacaoGravaDescricaoETempoQuandoInformadosERemoveQuandoAusentes() {
+        when(dynamo.updateItem(any(UpdateItemRequest.class))).thenReturn(UpdateItemResponse.builder()
+                .attributes(servico("troca", "Troca", "90.00")).build());
+
+        repository.atualizarItemCatalogo(TipoItem.SERVICO, "troca",
+                new AtualizacaoItemCatalogo("Troca", "Inclui filtro", new BigDecimal("90.00"), true, 45));
+        repository.atualizarItemCatalogo(TipoItem.SERVICO, "troca",
+                new AtualizacaoItemCatalogo("Troca", null, new BigDecimal("90.00"), true, null));
+
+        ArgumentCaptor<UpdateItemRequest> capturado = ArgumentCaptor.forClass(UpdateItemRequest.class);
+        verify(dynamo, times(2)).updateItem(capturado.capture());
+        UpdateItemRequest completo = capturado.getAllValues().get(0);
+        assertThat(completo.updateExpression()).contains("descricao = :descricao", "tempoEstimadoMinutos = :tempo")
+                .doesNotContain("REMOVE");
+        assertThat(completo.expressionAttributeValues().get(":descricao").s()).isEqualTo("Inclui filtro");
+        assertThat(completo.expressionAttributeValues().get(":tempo").n()).isEqualTo("45");
+        UpdateItemRequest limpo = capturado.getAllValues().get(1);
+        assertThat(limpo.updateExpression()).endsWith("REMOVE descricao, tempoEstimadoMinutos");
+        assertThat(limpo.expressionAttributeValues()).doesNotContainKeys(":descricao", ":tempo");
+    }
+
+    @Test
+    void leDescricaoETempoEstimadoDoItem() {
+        Map<String, AttributeValue> item = new java.util.HashMap<>(servico("troca", "Troca", "90.00"));
+        item.put("descricao", s("Inclui filtro"));
+        item.put("tempoEstimadoMinutos", n("45"));
+        when(dynamo.scan(any(ScanRequest.class))).thenReturn(ScanResponse.builder().items(List.of(item)).build());
+
+        ItemCatalogo lido = repository.listarItensCatalogo(null, null).get(0);
+
+        assertThat(lido.descricao()).isEqualTo("Inclui filtro");
+        assertThat(lido.tempoEstimadoMinutos()).isEqualTo(45);
+    }
+
+    @Test
+    void inativarMarcaApenasOAtivoComoFalsoDeFormaCondicional() {
+        when(dynamo.updateItem(any(UpdateItemRequest.class))).thenReturn(UpdateItemResponse.builder()
+                .attributes(peca("filtro", "Filtro", "25.00", false, "3")).build());
+
+        repository.inativarItemCatalogo(TipoItem.PECA, "filtro");
+
+        ArgumentCaptor<UpdateItemRequest> capturado = ArgumentCaptor.forClass(UpdateItemRequest.class);
+        verify(dynamo).updateItem(capturado.capture());
+        UpdateItemRequest request = capturado.getValue();
+        assertThat(request.updateExpression()).isEqualTo("SET ativo = :ativo");
+        assertThat(request.expressionAttributeValues().get(":ativo").bool()).isFalse();
+        assertThat(request.conditionExpression()).isEqualTo("attribute_exists(pk)");
+    }
+
+    @Test
+    void inativarItemInexistenteFalhaComoNaoEncontrado() {
+        when(dynamo.updateItem(any(UpdateItemRequest.class))).thenThrow(ConditionalCheckFailedException.builder().build());
+        assertThatThrownBy(() -> repository.inativarItemCatalogo(TipoItem.PECA, "nada"))
+                .isInstanceOf(ItemCatalogoNaoEncontradoException.class);
     }
 }

@@ -8,6 +8,7 @@ import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -55,8 +56,9 @@ public class ExecucaoController {
 
     @GetMapping("/api/v1/catalogo")
     public List<ItemCatalogo> listarCatalogo(@RequestParam(required = false) TipoItem tipo,
-                                             @RequestParam(required = false) Boolean ativo) {
-        return service.listarCatalogo(tipo, ativo);
+                                             @RequestParam(required = false) Boolean ativo,
+                                             @RequestParam(required = false) String nome) {
+        return service.listarCatalogo(tipo, ativo, nome);
     }
 
     @GetMapping("/api/v1/catalogo/{tipo}/{itemId}")
@@ -67,7 +69,14 @@ public class ExecucaoController {
     @PutMapping("/api/v1/catalogo/{tipo}/{itemId}")
     public ItemCatalogo atualizarItem(@PathVariable TipoItem tipo, @PathVariable String itemId,
                                       @RequestBody AtualizarItemCatalogoRequest request) {
-        return service.atualizarItemCatalogo(tipo, itemId, request.nome(), request.precoUnitario(), request.ativo());
+        return service.atualizarItemCatalogo(tipo, itemId, request.nome(), request.descricao(),
+                request.precoUnitario(), request.ativo(), request.tempoEstimadoMinutos());
+    }
+
+    @DeleteMapping("/api/v1/catalogo/{tipo}/{itemId}")
+    public ResponseEntity<Void> inativarItem(@PathVariable TipoItem tipo, @PathVariable String itemId) {
+        service.inativarItemCatalogo(tipo, itemId);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/api/v1/catalogo/{tipo}/{itemId}/estoque/reposicao")
@@ -102,7 +111,8 @@ public class ExecucaoController {
         return service.cotar(request.itens());
     }
 
-    public record AtualizarItemCatalogoRequest(String nome, BigDecimal precoUnitario, Boolean ativo) {
+    public record AtualizarItemCatalogoRequest(String nome, String descricao, BigDecimal precoUnitario, Boolean ativo,
+                                               Integer tempoEstimadoMinutos) {
     }
 
     public record ReporEstoqueRequest(int quantidade) {
