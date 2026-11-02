@@ -1,0 +1,1976 @@
+{
+  "info": {
+    "name": "Execução Service - Fluxo completo",
+    "description": "# Execução Service: fluxo completo\n\nCollection com o fluxo da Oficina FIAP (Fase 4) no Execução Service. Cobre as rotas HTTP e simula o OS Service publicando comandos na fila SQS.\n\n## Como usar\n1. Importe este arquivo no Postman (Import > arquivo `.json`).\n2. Em **Variables** da collection, ajuste `baseUrl` e, se for usar a AWS, as URLs das filas e as credenciais.\n3. Rode as pastas na ordem: **0, 1, 2, 3** (fluxo feliz). A pasta **4** mostra o cancelamento (aceito e recusado), e as pastas **5** e **6** mostram os erros.\n\n## Para repetir o fluxo\nDepois de concluir a OS, rodar de novo na mesma OS devolve 409 em \"Iniciar execução\" (ela já está CONCLUIDA). Troque `osId` e `sagaId` (e `osIdCancelar`) por valores novos para um novo ciclo.\n\n## Importante\n- **Agendar e cancelar não têm endpoint HTTP.** Entram pela fila `execucao-comandos`, enviados pelo OS Service. As requisições das pastas 2, 4 e 6 usam a API do SQS (`SendMessage`/`ReceiveMessage`) com assinatura AWS (Authorization > AWS Signature).\n- O consumidor e o publicador do serviço precisam estar ligados (`SQS_CONSUMER_ENABLED=true`, `OUTBOX_PUBLISHER_ENABLED=true`) e com as URLs das filas configuradas, senão nada acontece depois do envio. Aguarde ~15 s.\n- As respostas do SQS vêm em XML, com o JSON do evento escapado dentro de `<Body>`.\n- Os eventos não saem em ordem garantida e podem chegar duplicados.\n- `ReceiveMessage` com `VisibilityTimeout=0` só espia a fila; não consome as mensagens.\n- Ainda não há autenticação nas rotas HTTP do serviço.\n\nDetalhes dos campos: `docs/contrato-provisorio-saga.md` (guia de integração) e `docs/fluxo-de-negocio.md`.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0 - Preparação: catálogo (mecânico/operador)",
+      "description": "Cadastra a peça e o serviço usados nos demais passos. Se o item já existir, a resposta é 409 (esperado ao repetir).",
+      "item": [
+        {
+          "name": "Cadastrar peça",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo"
+              ]
+            },
+            "description": "204 criado; 409 se o item já existe. Peça exige quantidadeEstoque inteira >= 0.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"PECA\",\n  \"itemId\": \"{{pecaId}}\",\n  \"nome\": \"Filtro de óleo\",\n  \"precoUnitario\": 45.5,\n  \"ativo\": true,\n  \"quantidadeEstoque\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 204, 409', function () {",
+                  "    pm.expect([204, 409]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cadastrar serviço",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo"
+              ]
+            },
+            "description": "Serviço não tem estoque (não envie quantidadeEstoque).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"SERVICO\",\n  \"itemId\": \"{{servicoId}}\",\n  \"nome\": \"Troca de óleo\",\n  \"precoUnitario\": 90.0,\n  \"ativo\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 204, 409', function () {",
+                  "    pm.expect([204, 409]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1 - Diagnóstico e cotação (mecânico, OS Service, Billing)",
+      "description": "Rode na ordem. O 'Iniciar diagnóstico' e o 'Substituir itens' guardam a versão atual em {{diagVersao}}.",
+      "item": [
+        {
+          "name": "Iniciar diagnóstico (mecânico)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/diagnosticos/{{osId}}/inicio",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "diagnosticos",
+                "{{osId}}",
+                "inicio"
+              ]
+            },
+            "description": "Cria o diagnóstico (versão 1) ou devolve o existente. Sem corpo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('diagVersao', json.versao);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Substituir itens do diagnóstico (mecânico)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/diagnosticos/{{osId}}/itens",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "diagnosticos",
+                "{{osId}}",
+                "itens"
+              ]
+            },
+            "description": "Substitui a lista inteira. versaoEsperada precisa ser a versão lida antes; senão 409.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"versaoEsperada\": {{diagVersao}},\n  \"itens\": [\n    {\n      \"tipo\": \"SERVICO\",\n      \"itemId\": \"{{servicoId}}\",\n      \"quantidade\": 1\n    },\n    {\n      \"tipo\": \"PECA\",\n      \"itemId\": \"{{pecaId}}\",\n      \"quantidade\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('diagVersao', json.versao);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar diagnóstico (OS Service)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/diagnosticos/{{osId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "diagnosticos",
+                "{{osId}}"
+              ]
+            },
+            "description": "O OS Service lê itens e versão antes de pedir o orçamento. O diagnóstico não guarda preço."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cotar preços (Billing)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cotacoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cotacoes"
+              ]
+            },
+            "description": "Preços atuais do catálogo. Não cria orçamento nem reserva estoque.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itens\": [\n    {\n      \"tipo\": \"PECA\",\n      \"itemId\": \"{{pecaId}}\",\n      \"quantidade\": 2\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 - Agendamento (simula o OS Service publicando na fila)",
+      "description": "Não existe endpoint HTTP para agendar: o comando vem do OS Service pela fila execucao-comandos. Estas requisições usam a API do SQS (Action=SendMessage / ReceiveMessage). Aguarde ~15 s entre enviar e conferir.",
+      "item": [
+        {
+          "name": "Enviar AgendarExecucao",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                {
+                  "key": "accessKey",
+                  "value": "{{awsAccessKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "secretKey",
+                  "value": "{{awsSecretKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "sessionToken",
+                  "value": "{{awsSessionToken}}",
+                  "type": "string"
+                },
+                {
+                  "key": "region",
+                  "value": "{{awsRegion}}",
+                  "type": "string"
+                },
+                {
+                  "key": "service",
+                  "value": "sqs",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{sqsComandosUrl}}",
+              "host": [
+                "{{sqsComandosUrl}}"
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "SendMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MessageBody",
+                  "value": "{\"schemaVersion\": 1, \"messageId\": \"{{$guid}}\", \"operationId\": \"agendar-os-{{osId}}-v1\", \"type\": \"AgendarExecucao\", \"sagaId\": \"{{sagaId}}\", \"osId\": \"{{osId}}\", \"causationId\": \"postman\", \"occurredAt\": \"2026-11-02T14:00:00Z\", \"payload\": {\"orcamentoId\": \"orc-{{osId}}\", \"versao\": 1, \"pagamentoId\": \"pag-{{osId}}\", \"itens\": [{\"tipo\": \"SERVICO\", \"itemId\": \"{{servicoId}}\", \"quantidade\": 1}, {\"tipo\": \"PECA\", \"itemId\": \"{{pecaId}}\", \"quantidade\": 1}]}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Reserva as peças e cria a execução AGENDADA. Reenviar com o MESMO operationId não duplica nada. Para uma nova tentativa depois de rejeição, mude o operationId."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ver eventos publicados (execucao-resultados)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                {
+                  "key": "accessKey",
+                  "value": "{{awsAccessKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "secretKey",
+                  "value": "{{awsSecretKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "sessionToken",
+                  "value": "{{awsSessionToken}}",
+                  "type": "string"
+                },
+                {
+                  "key": "region",
+                  "value": "{{awsRegion}}",
+                  "type": "string"
+                },
+                {
+                  "key": "service",
+                  "value": "sqs",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{sqsResultadosUrl}}",
+              "host": [
+                "{{sqsResultadosUrl}}"
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "ReceiveMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MaxNumberOfMessages",
+                  "value": "10",
+                  "type": "text"
+                },
+                {
+                  "key": "VisibilityTimeout",
+                  "value": "0",
+                  "type": "text"
+                },
+                {
+                  "key": "WaitTimeSeconds",
+                  "value": "2",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Lê sem consumir (VisibilityTimeout=0). Procure ExecucaoAgendada dentro do corpo (o JSON vem escapado em XML). Os eventos não têm ordem garantida."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar execução (esperado AGENDADA)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/execucoes/{{osId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "execucoes",
+                "{{osId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Status AGENDADA', function () { pm.expect(pm.response.json().status).to.eql('AGENDADA'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 - Execução (mecânico, HTTP)",
+      "description": "Cada ação publica um evento em execucao-resultados (ExecucaoIniciada / ExecucaoConcluida).",
+      "item": [
+        {
+          "name": "Listar fila de trabalho",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/execucoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "execucoes"
+              ]
+            },
+            "description": "Lista todas as execuções (Scan, sem paginação)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar execução",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/execucoes/{{osId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "execucoes",
+                "{{osId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Iniciar execução (AGENDADA -> EM_EXECUCAO)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/execucoes/{{osId}}/inicio",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "execucoes",
+                "{{osId}}",
+                "inicio"
+              ]
+            },
+            "description": "Repetir devolve o registro atual (200) sem novo evento. 409 se não estiver AGENDADA."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Concluir execução (EM_EXECUCAO -> CONCLUIDA)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/execucoes/{{osId}}/conclusao",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "execucoes",
+                "{{osId}}",
+                "conclusao"
+              ]
+            },
+            "description": "409 se não estiver EM_EXECUCAO."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ver eventos publicados (execucao-resultados)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                {
+                  "key": "accessKey",
+                  "value": "{{awsAccessKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "secretKey",
+                  "value": "{{awsSecretKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "sessionToken",
+                  "value": "{{awsSessionToken}}",
+                  "type": "string"
+                },
+                {
+                  "key": "region",
+                  "value": "{{awsRegion}}",
+                  "type": "string"
+                },
+                {
+                  "key": "service",
+                  "value": "sqs",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{sqsResultadosUrl}}",
+              "host": [
+                "{{sqsResultadosUrl}}"
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "ReceiveMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MaxNumberOfMessages",
+                  "value": "10",
+                  "type": "text"
+                },
+                {
+                  "key": "VisibilityTimeout",
+                  "value": "0",
+                  "type": "text"
+                },
+                {
+                  "key": "WaitTimeSeconds",
+                  "value": "2",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Procure ExecucaoIniciada e ExecucaoConcluida."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 - Cancelamento (OS Service publica na fila)",
+      "description": "Usa uma OS própria ({{osIdCancelar}}) para não depender da execução já concluída na pasta 3. Execução AGENDADA: peças devolvidas e evento ExecucaoCancelada. Se a execução já estiver EM_EXECUCAO ou CONCLUIDA (por exemplo, enviando CancelarExecucao para a OS {{osId}} depois da pasta 3), o resultado é CancelamentoExecucaoRecusado.",
+      "item": [
+        {
+          "name": "Enviar AgendarExecucao (OS a cancelar)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                {
+                  "key": "accessKey",
+                  "value": "{{awsAccessKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "secretKey",
+                  "value": "{{awsSecretKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "sessionToken",
+                  "value": "{{awsSessionToken}}",
+                  "type": "string"
+                },
+                {
+                  "key": "region",
+                  "value": "{{awsRegion}}",
+                  "type": "string"
+                },
+                {
+                  "key": "service",
+                  "value": "sqs",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{sqsComandosUrl}}",
+              "host": [
+                "{{sqsComandosUrl}}"
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "SendMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MessageBody",
+                  "value": "{\"schemaVersion\": 1, \"messageId\": \"{{$guid}}\", \"operationId\": \"agendar-os-{{osIdCancelar}}-v1\", \"type\": \"AgendarExecucao\", \"sagaId\": \"saga-{{osIdCancelar}}\", \"osId\": \"{{osIdCancelar}}\", \"causationId\": \"postman\", \"occurredAt\": \"2026-11-02T14:00:00Z\", \"payload\": {\"orcamentoId\": \"orc-{{osIdCancelar}}\", \"versao\": 1, \"pagamentoId\": \"pag-{{osIdCancelar}}\", \"itens\": [{\"tipo\": \"SERVICO\", \"itemId\": \"{{servicoId}}\", \"quantidade\": 1}, {\"tipo\": \"PECA\", \"itemId\": \"{{pecaId}}\", \"quantidade\": 1}]}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Cria a execução AGENDADA da OS que será cancelada. Aguarde ~15 s."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar execução (esperado AGENDADA)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/execucoes/{{osIdCancelar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "execucoes",
+                "{{osIdCancelar}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Status AGENDADA', function () { pm.expect(pm.response.json().status).to.eql('AGENDADA'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Enviar CancelarExecucao",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                {
+                  "key": "accessKey",
+                  "value": "{{awsAccessKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "secretKey",
+                  "value": "{{awsSecretKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "sessionToken",
+                  "value": "{{awsSessionToken}}",
+                  "type": "string"
+                },
+                {
+                  "key": "region",
+                  "value": "{{awsRegion}}",
+                  "type": "string"
+                },
+                {
+                  "key": "service",
+                  "value": "sqs",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{sqsComandosUrl}}",
+              "host": [
+                "{{sqsComandosUrl}}"
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "SendMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MessageBody",
+                  "value": "{\"schemaVersion\": 1, \"messageId\": \"{{$guid}}\", \"operationId\": \"cancelar-os-{{osIdCancelar}}\", \"type\": \"CancelarExecucao\", \"sagaId\": \"saga-{{osIdCancelar}}\", \"osId\": \"{{osIdCancelar}}\", \"causationId\": \"postman\", \"occurredAt\": \"2026-11-02T14:00:00Z\"}",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "O sagaId precisa ser o mesmo da execução. Execução inexistente ou sagaId diferente vai para a DLQ. Aguarde ~15 s."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ver eventos publicados (execucao-resultados)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                {
+                  "key": "accessKey",
+                  "value": "{{awsAccessKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "secretKey",
+                  "value": "{{awsSecretKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "sessionToken",
+                  "value": "{{awsSessionToken}}",
+                  "type": "string"
+                },
+                {
+                  "key": "region",
+                  "value": "{{awsRegion}}",
+                  "type": "string"
+                },
+                {
+                  "key": "service",
+                  "value": "sqs",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{sqsResultadosUrl}}",
+              "host": [
+                "{{sqsResultadosUrl}}"
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "ReceiveMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MaxNumberOfMessages",
+                  "value": "10",
+                  "type": "text"
+                },
+                {
+                  "key": "VisibilityTimeout",
+                  "value": "0",
+                  "type": "text"
+                },
+                {
+                  "key": "WaitTimeSeconds",
+                  "value": "2",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Procure ExecucaoCancelada."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar execução (esperado CANCELADA)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/execucoes/{{osIdCancelar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "execucoes",
+                "{{osIdCancelar}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "pm.test('Status CANCELADA', function () { pm.expect(pm.response.json().status).to.eql('CANCELADA'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Enviar CancelarExecucao para a OS já concluída (recusado)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                {
+                  "key": "accessKey",
+                  "value": "{{awsAccessKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "secretKey",
+                  "value": "{{awsSecretKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "sessionToken",
+                  "value": "{{awsSessionToken}}",
+                  "type": "string"
+                },
+                {
+                  "key": "region",
+                  "value": "{{awsRegion}}",
+                  "type": "string"
+                },
+                {
+                  "key": "service",
+                  "value": "sqs",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{sqsComandosUrl}}",
+              "host": [
+                "{{sqsComandosUrl}}"
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "SendMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MessageBody",
+                  "value": "{\"schemaVersion\": 1, \"messageId\": \"{{$guid}}\", \"operationId\": \"cancelar-os-{{osId}}\", \"type\": \"CancelarExecucao\", \"sagaId\": \"{{sagaId}}\", \"osId\": \"{{osId}}\", \"causationId\": \"postman\", \"occurredAt\": \"2026-11-02T14:00:00Z\"}",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "A OS da pasta 3 está CONCLUIDA: o serviço não cancela e publica CancelamentoExecucaoRecusado."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ver eventos publicados (execucao-resultados)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                {
+                  "key": "accessKey",
+                  "value": "{{awsAccessKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "secretKey",
+                  "value": "{{awsSecretKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "sessionToken",
+                  "value": "{{awsSessionToken}}",
+                  "type": "string"
+                },
+                {
+                  "key": "region",
+                  "value": "{{awsRegion}}",
+                  "type": "string"
+                },
+                {
+                  "key": "service",
+                  "value": "sqs",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{sqsResultadosUrl}}",
+              "host": [
+                "{{sqsResultadosUrl}}"
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "ReceiveMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MaxNumberOfMessages",
+                  "value": "10",
+                  "type": "text"
+                },
+                {
+                  "key": "VisibilityTimeout",
+                  "value": "0",
+                  "type": "text"
+                },
+                {
+                  "key": "WaitTimeSeconds",
+                  "value": "2",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Procure CancelamentoExecucaoRecusado."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5 - Cenários de erro (HTTP)",
+      "description": "Respostas de erro no formato ProblemDetail (status, detail).",
+      "item": [
+        {
+          "name": "Diagnóstico inexistente (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/diagnosticos/999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "diagnosticos",
+                "999999"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 404', function () {",
+                  "    pm.expect([404]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Substituir itens com versão desatualizada (409)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/diagnosticos/{{osId}}/itens",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "diagnosticos",
+                "{{osId}}",
+                "itens"
+              ]
+            },
+            "description": "Dá 409 depois que o diagnóstico já passou da versão 1. Se ainda estiver na v1, será 200.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"versaoEsperada\": 1,\n  \"itens\": [\n    {\n      \"tipo\": \"SERVICO\",\n      \"itemId\": \"{{servicoId}}\",\n      \"quantidade\": 1\n    },\n    {\n      \"tipo\": \"PECA\",\n      \"itemId\": \"{{pecaId}}\",\n      \"quantidade\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 409, 200', function () {",
+                  "    pm.expect([409, 200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Substituir itens com item inexistente (400)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/diagnosticos/{{osId}}/itens",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "diagnosticos",
+                "{{osId}}",
+                "itens"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"versaoEsperada\": {{diagVersao}},\n  \"itens\": [\n    {\n      \"tipo\": \"PECA\",\n      \"itemId\": \"nao-existe\",\n      \"quantidade\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 400', function () {",
+                  "    pm.expect([400]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cotação com item inexistente (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cotacoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cotacoes"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itens\": [\n    {\n      \"tipo\": \"PECA\",\n      \"itemId\": \"nao-existe\",\n      \"quantidade\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 400', function () {",
+                  "    pm.expect([400]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cotação com lista vazia (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cotacoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cotacoes"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itens\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 400', function () {",
+                  "    pm.expect([400]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cadastrar item duplicado (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalogo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "catalogo"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"PECA\",\n  \"itemId\": \"{{pecaId}}\",\n  \"nome\": \"Filtro de óleo\",\n  \"precoUnitario\": 45.5,\n  \"ativo\": true,\n  \"quantidadeEstoque\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 409', function () {",
+                  "    pm.expect([409]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Iniciar execução inexistente (404)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/execucoes/999999/inicio",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "execucoes",
+                "999999",
+                "inicio"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 404', function () {",
+                  "    pm.expect([404]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Concluir execução inexistente (404)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/execucoes/999999/conclusao",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "execucoes",
+                "999999",
+                "conclusao"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 404', function () {",
+                  "    pm.expect([404]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6 - Cenários de erro (fila)",
+      "description": "Rejeição por estoque gera evento. Mensagens inválidas não geram evento: após 3 recebimentos vão para a DLQ (cerca de 2 a 3 minutos no ambiente local).",
+      "item": [
+        {
+          "name": "AgendarExecucao com estoque insuficiente (ExecucaoRejeitada)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                {
+                  "key": "accessKey",
+                  "value": "{{awsAccessKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "secretKey",
+                  "value": "{{awsSecretKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "sessionToken",
+                  "value": "{{awsSessionToken}}",
+                  "type": "string"
+                },
+                {
+                  "key": "region",
+                  "value": "{{awsRegion}}",
+                  "type": "string"
+                },
+                {
+                  "key": "service",
+                  "value": "sqs",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{sqsComandosUrl}}",
+              "host": [
+                "{{sqsComandosUrl}}"
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "SendMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MessageBody",
+                  "value": "{\"schemaVersion\": 1, \"messageId\": \"{{$guid}}\", \"operationId\": \"agendar-os-{{osIdRejeicao}}-v1\", \"type\": \"AgendarExecucao\", \"sagaId\": \"saga-{{osIdRejeicao}}\", \"osId\": \"{{osIdRejeicao}}\", \"causationId\": \"postman\", \"occurredAt\": \"2026-11-02T14:00:00Z\", \"payload\": {\"orcamentoId\": \"orc-rej\", \"versao\": 1, \"pagamentoId\": \"pag-rej\", \"itens\": [{\"tipo\": \"PECA\", \"itemId\": \"{{pecaId}}\", \"quantidade\": 9999}]}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Resultado: evento ExecucaoRejeitada (ESTOQUE_INSUFICIENTE) e nenhuma execução criada."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ver eventos publicados (execucao-resultados)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                {
+                  "key": "accessKey",
+                  "value": "{{awsAccessKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "secretKey",
+                  "value": "{{awsSecretKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "sessionToken",
+                  "value": "{{awsSessionToken}}",
+                  "type": "string"
+                },
+                {
+                  "key": "region",
+                  "value": "{{awsRegion}}",
+                  "type": "string"
+                },
+                {
+                  "key": "service",
+                  "value": "sqs",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{sqsResultadosUrl}}",
+              "host": [
+                "{{sqsResultadosUrl}}"
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "ReceiveMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MaxNumberOfMessages",
+                  "value": "10",
+                  "type": "text"
+                },
+                {
+                  "key": "VisibilityTimeout",
+                  "value": "0",
+                  "type": "text"
+                },
+                {
+                  "key": "WaitTimeSeconds",
+                  "value": "2",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Procure ExecucaoRejeitada."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Enviar mensagem inválida (vai para a DLQ)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                {
+                  "key": "accessKey",
+                  "value": "{{awsAccessKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "secretKey",
+                  "value": "{{awsSecretKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "sessionToken",
+                  "value": "{{awsSessionToken}}",
+                  "type": "string"
+                },
+                {
+                  "key": "region",
+                  "value": "{{awsRegion}}",
+                  "type": "string"
+                },
+                {
+                  "key": "service",
+                  "value": "sqs",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{sqsComandosUrl}}",
+              "host": [
+                "{{sqsComandosUrl}}"
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "SendMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MessageBody",
+                  "value": "{\"type\":\"Qualquer\"}",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Falha a cada leitura e, na terceira, é movida para execucao-comandos-dlq."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ver fila de comandos com falha (DLQ)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "awsv4",
+              "awsv4": [
+                {
+                  "key": "accessKey",
+                  "value": "{{awsAccessKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "secretKey",
+                  "value": "{{awsSecretKey}}",
+                  "type": "string"
+                },
+                {
+                  "key": "sessionToken",
+                  "value": "{{awsSessionToken}}",
+                  "type": "string"
+                },
+                {
+                  "key": "region",
+                  "value": "{{awsRegion}}",
+                  "type": "string"
+                },
+                {
+                  "key": "service",
+                  "value": "sqs",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{sqsComandosDlqUrl}}",
+              "host": [
+                "{{sqsComandosDlqUrl}}"
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "Action",
+                  "value": "ReceiveMessage",
+                  "type": "text"
+                },
+                {
+                  "key": "Version",
+                  "value": "2012-11-05",
+                  "type": "text"
+                },
+                {
+                  "key": "MaxNumberOfMessages",
+                  "value": "10",
+                  "type": "text"
+                },
+                {
+                  "key": "VisibilityTimeout",
+                  "value": "0",
+                  "type": "text"
+                },
+                {
+                  "key": "WaitTimeSeconds",
+                  "value": "2",
+                  "type": "text"
+                }
+              ]
+            },
+            "description": "Depois de alguns minutos a mensagem inválida aparece aqui."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "description": "",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "description": "URL do Execução Service. Local: http://localhost:8080. No cluster: http://execucao-service.oficina-ms:8080 (ClusterIP, só dentro do cluster)."
+    },
+    {
+      "key": "osId",
+      "value": "123",
+      "description": "Id da OS usada no fluxo. Troque para rodar outra OS."
+    },
+    {
+      "key": "sagaId",
+      "value": "saga-123",
+      "description": "Id da Saga da OS (gerado pelo OS Service em produção). Mantenha coerente com o osId."
+    },
+    {
+      "key": "osIdCancelar",
+      "value": "124",
+      "description": "OS usada no cenário de cancelamento (agendada e depois cancelada)."
+    },
+    {
+      "key": "osIdRejeicao",
+      "value": "125",
+      "description": "OS usada no cenário de estoque insuficiente."
+    },
+    {
+      "key": "pecaId",
+      "value": "filtro-oleo",
+      "description": "Peça do catálogo."
+    },
+    {
+      "key": "servicoId",
+      "value": "troca-oleo",
+      "description": "Serviço do catálogo."
+    },
+    {
+      "key": "diagVersao",
+      "value": "1",
+      "description": "Preenchida automaticamente pelos scripts do diagnóstico."
+    },
+    {
+      "key": "sqsComandosUrl",
+      "value": "http://localhost:9324/000000000000/execucao-comandos",
+      "description": "URL da fila execucao-comandos. Na AWS: https://sqs.us-east-1.amazonaws.com/<conta>/execucao-comandos."
+    },
+    {
+      "key": "sqsResultadosUrl",
+      "value": "http://localhost:9324/000000000000/execucao-resultados",
+      "description": "URL da fila execucao-resultados."
+    },
+    {
+      "key": "sqsComandosDlqUrl",
+      "value": "http://localhost:9324/000000000000/execucao-comandos-dlq",
+      "description": "URL da DLQ de comandos."
+    },
+    {
+      "key": "awsRegion",
+      "value": "us-east-1",
+      "description": "Região para assinar as chamadas ao SQS."
+    },
+    {
+      "key": "awsAccessKey",
+      "value": "local",
+      "description": "Credencial AWS. Local: qualquer valor. Na AWS: as credenciais do Learner Lab."
+    },
+    {
+      "key": "awsSecretKey",
+      "value": "local",
+      "description": "Credencial AWS (secreta). Local: qualquer valor."
+    },
+    {
+      "key": "awsSessionToken",
+      "value": "",
+      "description": "Token de sessão (Learner Lab). Deixe vazio no ambiente local."
+    }
+  ]
+}
