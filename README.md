@@ -59,7 +59,7 @@ Health check: `GET /actuator/health`.
 
 - [Como o serviço funciona: endpoints, consumo e publicação de mensagens](docs/funcionamento-do-servico.md)
 - [Arquitetura do Execução Service e configuração das DLQs](docs/arquitetura-execucao.md)
-- [Contratos provisórios de diagnóstico e Saga](docs/contrato-provisorio-saga.md)
+- [Guia de integração para OS Service e Billing: filas, mensagens, campos e HTTP](docs/contrato-provisorio-saga.md)
 
 ## Observacao importante
 
