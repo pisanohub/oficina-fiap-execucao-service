@@ -48,6 +48,11 @@ public class ExecucaoService {
         return repository.iniciarExecucao(osId.trim(), clock.instant());
     }
 
+    public ExecucaoTrabalho concluirExecucao(String osId) {
+        validarOsId(osId);
+        return repository.concluirExecucao(osId.trim(), clock.instant());
+    }
+
     public Diagnostico iniciarDiagnostico(String osId) {
         validarOsId(osId);
         return repository.iniciarDiagnostico(osId.trim(), clock.instant());

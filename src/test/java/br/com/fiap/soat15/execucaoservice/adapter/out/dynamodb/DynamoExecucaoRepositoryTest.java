@@ -19,6 +19,7 @@ import software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest;
 import software.amazon.awssdk.services.dynamodb.model.TransactionCanceledException;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -64,6 +65,31 @@ class DynamoExecucaoRepositoryTest {
         assertThat(escritas.get(3).put().item().get("pk").s()).isEqualTo("OUTBOX#op-123");
         assertThat(escritas.get(3).put().item().get("published").bool()).isFalse();
         assertThat(agendamento.osId()).isEqualTo("123");
+    }
+
+    @Test
+    void concluirExigeInicioERegistraEventoNaMesmaTransacao() {
+        repository.agendarExecucao(comando(List.of(new ItemSolicitado(TipoItem.PECA, "filtro", 1))), agora);
+        var captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamo).transactWriteItems(captor.capture());
+        var item = new HashMap<>(captor.getValue().transactItems().get(1).put().item());
+        when(dynamo.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(item).build());
+        assertThatThrownBy(() -> repository.concluirExecucao("123", agora)).isInstanceOf(IllegalStateException.class);
+        item.put("status", AttributeValue.builder().s("EM_EXECUCAO").build());
+        item.put("iniciadaEm", AttributeValue.builder().s(agora.toString()).build());
+        when(dynamo.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(item).build());
+        var concluida = repository.concluirExecucao("123", agora.plusSeconds(60));
+        assertThat(concluida.status()).isEqualTo("CONCLUIDA");
+        assertThat(concluida.concluidaEm()).isEqualTo(agora.plusSeconds(60));
+        verify(dynamo, times(2)).transactWriteItems(captor.capture());
+        var transacao = captor.getAllValues().get(captor.getAllValues().size() - 1).transactItems();
+        assertThat(transacao.get(0).update().conditionExpression()).contains(":iniciada");
+        assertThat(transacao.get(1).put().item().get("type").s()).isEqualTo("ExecucaoConcluida");
+        item.put("status", AttributeValue.builder().s("CONCLUIDA").build());
+        item.put("concluidaEm", AttributeValue.builder().s(agora.plusSeconds(60).toString()).build());
+        when(dynamo.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(item).build());
+        assertThat(repository.concluirExecucao("123", agora.plusSeconds(120)).concluidaEm()).isEqualTo(agora.plusSeconds(60));
+        verify(dynamo, times(2)).transactWriteItems(any(TransactWriteItemsRequest.class));
     }
 
     @Test

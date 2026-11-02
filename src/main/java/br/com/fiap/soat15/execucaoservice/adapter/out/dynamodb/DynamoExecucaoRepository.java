@@ -221,6 +221,46 @@ public class DynamoExecucaoRepository implements ExecucaoRepository {
         return mapearExecucao(atual);
     }
 
+    @Override
+    public ExecucaoTrabalho concluirExecucao(String osId, Instant agora) {
+        var chave = chaveExecucao(osId);
+        var item = buscar(chave);
+        if (item.isEmpty()) throw new NoSuchElementException("Execução não encontrada: " + osId);
+        if ("CONCLUIDA".equals(item.get("status").s())) return mapearExecucao(item);
+        if (!"EM_EXECUCAO".equals(item.get("status").s())) throw new IllegalStateException("Execução precisa estar em execução para ser concluída");
+        String operacao = "concluir-execucao-" + UUID.nameUUIDFromBytes(osId.getBytes(StandardCharsets.UTF_8));
+        Map<String, AttributeValue> evento = new HashMap<>(Map.of("pk", texto("OUTBOX#" + operacao), "sk", texto("RESULTADO")));
+        evento.put("type", texto("ExecucaoConcluida"));
+        evento.put("operationId", texto(operacao));
+        evento.put("sagaId", item.get("sagaId"));
+        evento.put("osId", texto(osId));
+        evento.put("causationId", texto(operacao));
+        evento.put("occurredAt", texto(agora.toString()));
+        evento.put("iniciadaEm", item.get("iniciadaEm"));
+        evento.put("orcamentoId", item.get("orcamentoId"));
+        evento.put("versaoOrcamento", item.get("versaoOrcamento"));
+        evento.put("pagamentoId", item.get("pagamentoId"));
+        evento.put("published", AttributeValue.builder().bool(false).build());
+        var atualizar = TransactWriteItem.builder().update(Update.builder().tableName(tableName).key(chave)
+                .updateExpression("SET #status = :concluida, concluidaEm = :agora")
+                .conditionExpression("#status = :iniciada")
+                .expressionAttributeNames(Map.of("#status", "status"))
+                .expressionAttributeValues(Map.of(":concluida", texto("CONCLUIDA"), ":iniciada", texto("EM_EXECUCAO"), ":agora", texto(agora.toString())))
+                .build()).build();
+        try {
+            dynamo.transactWriteItems(TransactWriteItemsRequest.builder().transactItems(atualizar, putSeAusente(evento)).build());
+        } catch (TransactionCanceledException falha) {
+            var atual = buscar(chave);
+            if (!atual.isEmpty() && "CONCLUIDA".equals(atual.get("status").s())) return mapearExecucao(atual);
+            if (!atual.isEmpty() && !"EM_EXECUCAO".equals(atual.get("status").s())) throw new IllegalStateException("Execução não pode ser concluída no estado atual", falha);
+            throw falha;
+        }
+        var atual = new HashMap<>(item);
+        atual.put("status", texto("CONCLUIDA"));
+        atual.put("concluidaEm", texto(agora.toString()));
+        return mapearExecucao(atual);
+    }
+
     private ExecucaoTrabalho mapearExecucao(Map<String, AttributeValue> item) {
         var itens = item.get("itens").l().stream().map(valor -> {
             var campos = valor.m();
@@ -229,7 +269,8 @@ public class DynamoExecucaoRepository implements ExecucaoRepository {
         }).toList();
         return new ExecucaoTrabalho(item.get("pk").s().substring(3),
                 item.get("status").s(), item.get("sagaId").s(), itens, Instant.parse(item.get("agendadoEm").s()),
-                item.containsKey("iniciadaEm") ? Instant.parse(item.get("iniciadaEm").s()) : null);
+                item.containsKey("iniciadaEm") ? Instant.parse(item.get("iniciadaEm").s()) : null,
+                item.containsKey("concluidaEm") ? Instant.parse(item.get("concluidaEm").s()) : null);
     }
 
     private TransactWriteItem putSeAusente(Map<String, AttributeValue> item) {

@@ -66,13 +66,12 @@ e cotação já usa DynamoDB e as mesmas rotas HTTP em todos os ambientes. O con
 `AgendarExecucao` está tipado e documentado. O agendamento já reserva peças e grava
 execução, deduplicação e outbox em uma única transação DynamoDB. O publicador da outbox
 envia resultados para `execucao-resultados` quando as duas variáveis de SQS acima são
-configuradas. O consumidor SQS recebe comandos quando habilitado. A consulta e o início das execuções
-estão disponíveis nesta branch. A conclusão, a autenticação e o deploy integrado
-ainda estão pendentes.
+configuradas. O consumidor SQS recebe comandos quando habilitado. A consulta, o início e a conclusão das execuções
+estão disponíveis nesta branch. A autenticação e o deploy integrado ainda estão pendentes.
 
 Próximas etapas do serviço:
 
-- Conclusão da execução e publicação do evento correspondente.
+- Cancelamento e compensação da execução, conforme contrato com o grupo.
 - Autenticação e autorização para operadores e serviços nas rotas `/api/v1`.
 - Infraestrutura DynamoDB/SQS no ambiente do grupo, cobertura mínima de 80%, BDD,
   quality gate e deploy automatizado. O CI atual ainda executa apenas build e testes.
