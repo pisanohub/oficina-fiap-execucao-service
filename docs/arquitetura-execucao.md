@@ -42,7 +42,7 @@ O grupo ainda precisa decidir em que momento a OS muda para `EM_EXECUCAO`: o des
 | `application` | Casos de uso e interfaces de persistência. |
 | `adapter/in/web` | Controlador HTTP e tratamento de erros. |
 | `adapter/in/sqs` | Leitura e encaminhamento dos comandos recebidos na fila. |
-| `adapter/out/dynamodb` | Persistência, transações e leitura da outbox no DynamoDB. |
+| `adapter/out/dynamodb` | Persistência DynamoDB. `DynamoExecucaoRepository` implementa a interface da aplicação e delega agendamento, ciclo da execução, diagnóstico e catálogo a classes próprias; `DynamoOutboxRepository` lê e confirma eventos. `DynamoKeys` e `DynamoRepositorySupport` compartilham convenções de chave e operações básicas. |
 | `adapter/out/sqs` | Publicação dos eventos de resultado no SQS. |
 | `contract` | Estruturas dos comandos recebidos. |
 | `config` | Configuração dos clientes AWS, relógio e agendamentos. |

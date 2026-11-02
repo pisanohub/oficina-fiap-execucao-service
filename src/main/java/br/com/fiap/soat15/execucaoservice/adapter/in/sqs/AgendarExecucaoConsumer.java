@@ -4,6 +4,7 @@ import br.com.fiap.soat15.execucaoservice.application.ExecucaoService;
 import br.com.fiap.soat15.execucaoservice.application.PecaIndisponivelException;
 import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
 import br.com.fiap.soat15.execucaoservice.contract.CancelarExecucaoCommand;
+import br.com.fiap.soat15.execucaoservice.contract.TipoComandoExecucao;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,17 +43,18 @@ public class AgendarExecucaoConsumer {
         for (var mensagem : mensagens) {
             try {
                 var envelope = mapper.readValue(mensagem.body(), Map.class);
-                if ("CancelarExecucao".equals(envelope.get("type"))) {
-                    service.cancelarExecucao(mapper.readValue(mensagem.body(), CancelarExecucaoCommand.class));
-                } else if ("AgendarExecucao".equals(envelope.get("type"))) {
-                    var comando = mapper.readValue(mensagem.body(), AgendarExecucaoCommand.class);
-                    try {
-                        service.agendarExecucao(comando);
-                    } catch (PecaIndisponivelException rejeitada) {
-                        log.info("Agendamento rejeitado por peça indisponível: {}", comando.operationId());
+                TipoComandoExecucao tipo = TipoComandoExecucao.fromCodigo((String) envelope.get("type"));
+                switch (tipo) {
+                    case CANCELAR -> service.cancelarExecucao(
+                            mapper.readValue(mensagem.body(), CancelarExecucaoCommand.class));
+                    case AGENDAR -> {
+                        var comando = mapper.readValue(mensagem.body(), AgendarExecucaoCommand.class);
+                        try {
+                            service.agendarExecucao(comando);
+                        } catch (PecaIndisponivelException rejeitada) {
+                            log.info("Agendamento rejeitado por peça indisponível: {}", comando.operationId());
+                        }
                     }
-                } else {
-                    throw new IllegalArgumentException("Tipo de comando desconhecido");
                 }
                 sqs.deleteMessage(DeleteMessageRequest.builder().queueUrl(queueUrl)
                         .receiptHandle(mensagem.receiptHandle()).build());
