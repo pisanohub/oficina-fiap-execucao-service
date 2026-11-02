@@ -9,6 +9,8 @@ import br.com.fiap.soat15.execucaoservice.application.DiagnosticoNaoEncontradoEx
 import br.com.fiap.soat15.execucaoservice.application.ExecucaoJaAgendadaException;
 import br.com.fiap.soat15.execucaoservice.application.PecaIndisponivelException;
 import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
+import br.com.fiap.soat15.execucaoservice.contract.CancelarExecucaoCommand;
+import software.amazon.awssdk.services.dynamodb.model.ConditionCheck;
 import br.com.fiap.soat15.execucaoservice.domain.model.AgendamentoExecucao;
 import br.com.fiap.soat15.execucaoservice.application.ExecucaoRepository;
 import br.com.fiap.soat15.execucaoservice.application.ItemCatalogoExistenteException;
@@ -158,6 +160,78 @@ public class DynamoExecucaoRepository implements ExecucaoRepository {
                 }
             }
             throw conflito;
+        }
+    }
+
+    @Override
+    public void cancelarExecucao(CancelarExecucaoCommand comando, Instant agora) {
+        var chaveOperacao = Map.of("pk", texto("OPERACAO#" + comando.operationId()), "sk", texto("CANCELAMENTO"));
+        var anterior = buscar(chaveOperacao);
+        if (!anterior.isEmpty()) {
+            validarCancelamento(anterior, comando);
+            return;
+        }
+        var chave = chaveExecucao(comando.osId());
+        var execucao = buscar(chave);
+        if (execucao.isEmpty()) throw new NoSuchElementException("Execução não encontrada: " + comando.osId());
+        if (!comando.sagaId().equals(execucao.get("sagaId").s())) throw new IllegalArgumentException("Saga não corresponde à execução");
+        String status = execucao.get("status").s();
+        boolean cancelar = "AGENDADA".equals(status);
+        boolean cancelada = "CANCELADA".equals(status);
+        if (!cancelar && !cancelada && !"EM_EXECUCAO".equals(status) && !"CONCLUIDA".equals(status)) {
+            throw new IllegalStateException("Estado de execução desconhecido: " + status);
+        }
+        String tipo = cancelar || cancelada ? "ExecucaoCancelada" : "CancelamentoExecucaoRecusado";
+        var operacao = new HashMap<>(chaveOperacao);
+        operacao.put("osId", texto(comando.osId()));
+        operacao.put("sagaId", texto(comando.sagaId()));
+        operacao.put("resultado", texto(tipo));
+        Map<String, AttributeValue> evento = new HashMap<>(Map.of("pk", texto("OUTBOX#" + comando.operationId()), "sk", texto("RESULTADO")));
+        evento.put("type", texto(tipo));
+        evento.put("operationId", texto(comando.operationId()));
+        evento.put("sagaId", texto(comando.sagaId()));
+        evento.put("osId", texto(comando.osId()));
+        evento.put("causationId", texto(comando.messageId()));
+        evento.put("occurredAt", texto(agora.toString()));
+        evento.put("orcamentoId", execucao.get("orcamentoId"));
+        evento.put("versaoOrcamento", execucao.get("versaoOrcamento"));
+        evento.put("pagamentoId", execucao.get("pagamentoId"));
+        if (!cancelar && !cancelada) evento.put("motivo", texto("ESTADO_NAO_PERMITE_CANCELAMENTO"));
+        evento.put("published", AttributeValue.builder().bool(false).build());
+        List<TransactWriteItem> escritas = new ArrayList<>();
+        if (cancelar) {
+            for (var valor : execucao.get("itens").l()) {
+                var item = valor.m();
+                if (!"PECA".equals(item.get("tipo").s())) continue;
+                escritas.add(TransactWriteItem.builder().update(Update.builder().tableName(tableName)
+                        .key(chaveCatalogo(TipoItem.PECA, item.get("itemId").s()))
+                        .updateExpression("SET quantidadeEstoque = quantidadeEstoque + :quantidade")
+                        .conditionExpression("attribute_exists(pk) AND attribute_exists(quantidadeEstoque)")
+                        .expressionAttributeValues(Map.of(":quantidade", item.get("quantidade"))).build()).build());
+            }
+            escritas.add(TransactWriteItem.builder().update(Update.builder().tableName(tableName).key(chave)
+                    .updateExpression("SET #status = :novo, canceladaEm = :agora")
+                    .conditionExpression("#status = :atual").expressionAttributeNames(Map.of("#status", "status"))
+                    .expressionAttributeValues(Map.of(":novo", texto("CANCELADA"), ":atual", texto(status), ":agora", texto(agora.toString()))).build()).build());
+        } else {
+            escritas.add(TransactWriteItem.builder().conditionCheck(ConditionCheck.builder().tableName(tableName).key(chave)
+                    .conditionExpression("#status = :atual").expressionAttributeNames(Map.of("#status", "status"))
+                    .expressionAttributeValues(Map.of(":atual", texto(status))).build()).build());
+        }
+        escritas.add(putSeAusente(operacao));
+        escritas.add(putSeAusente(evento));
+        try {
+            dynamo.transactWriteItems(TransactWriteItemsRequest.builder().transactItems(escritas).build());
+        } catch (TransactionCanceledException falha) {
+            var concluida = buscar(chaveOperacao);
+            if (!concluida.isEmpty()) { validarCancelamento(concluida, comando); return; }
+            throw falha;
+        }
+    }
+
+    private void validarCancelamento(Map<String, AttributeValue> operacao, CancelarExecucaoCommand comando) {
+        if (!comando.osId().equals(operacao.get("osId").s()) || !comando.sagaId().equals(operacao.get("sagaId").s())) {
+            throw new IllegalArgumentException("operationId de cancelamento reutilizado com dados diferentes");
         }
     }
 

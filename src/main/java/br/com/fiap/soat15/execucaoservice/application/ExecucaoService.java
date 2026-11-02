@@ -5,6 +5,7 @@ import java.util.NoSuchElementException;
 import br.com.fiap.soat15.execucaoservice.domain.model.Cotacao;
 import br.com.fiap.soat15.execucaoservice.domain.model.AgendamentoExecucao;
 import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
+import br.com.fiap.soat15.execucaoservice.contract.CancelarExecucaoCommand;
 import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCotado;
@@ -32,6 +33,11 @@ public class ExecucaoService {
         }
         validarItens(comando.payload().itens());
         return repository.agendarExecucao(comando, clock.instant());
+    }
+
+    public void cancelarExecucao(CancelarExecucaoCommand comando) {
+        if (comando == null) throw new IllegalArgumentException("Comando é obrigatório");
+        repository.cancelarExecucao(comando, clock.instant());
     }
 
     public List<ExecucaoTrabalho> listarExecucoes() {

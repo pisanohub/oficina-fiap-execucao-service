@@ -240,3 +240,29 @@ Exemplo de resposta após início:
 ```
 
 O início grava a transição e a outbox na mesma transação. O evento `ExecucaoIniciada` usa `operationId` e `causationId` determinísticos derivados da OS; seu payload contém `status: EM_EXECUCAO`, `iniciadaEm`, `orcamentoId`, `versao` e `pagamentoId`. O evento `ExecucaoAgendada` passa a conter `status: AGENDADA`; rejeições continuam informando o motivo, pois não há execução criada. O publicador pode reenviar mensagens e a ordem de entrega entre eventos não é garantida: o OS Service deve lidar com duplicatas e eventos fora de ordem. A conclusão também grava a mudança de estado e a outbox juntas. O contrato e a sincronização de status seguem sujeitos à validação do grupo.
+
+## Cancelamento da execução — implementação nesta branch
+
+O OS Service envia `CancelarExecucao` para `execucao-comandos`. A execução deve pertencer à mesma saga. Este contrato é provisório e precisa ser validado com o grupo.
+
+```json
+{
+  "schemaVersion": 1,
+  "messageId": "7b9c84b4-144f-4ad1-943e-c30bc8e2073b",
+  "operationId": "cancelar-os-123",
+  "type": "CancelarExecucao",
+  "sagaId": "saga-123",
+  "osId": "123",
+  "causationId": "causa-do-cancelamento",
+  "occurredAt": "2026-11-02T15:00:00Z"
+}
+```
+
+A mesma `operationId` deve ser mantida nas tentativas da mesma solicitação. Em `AGENDADA`, o serviço devolve as peças, altera o estado para `CANCELADA` e registra o resultado na outbox na mesma transação. Em `EM_EXECUCAO` ou `CONCLUIDA`, não devolve peças e registra a recusa. Para uma execução já `CANCELADA`, outra operação recebe confirmação sem devolver o estoque novamente. Repetir a mesma operação não gera outra devolução ou outro registro de resultado.
+
+O OS Service recebe um destes eventos em `execucao-resultados`, com o envelope habitual (`schemaVersion`, `messageId`, `operationId`, `type`, `sagaId`, `osId`, `causationId`, `occurredAt`):
+
+- `ExecucaoCancelada`: payload `{"status":"CANCELADA","orcamentoId":"orc-123","versao":2,"pagamentoId":"pag-123"}`.
+- `CancelamentoExecucaoRecusado`: payload `{"motivo":"ESTADO_NAO_PERMITE_CANCELAMENTO","orcamentoId":"orc-123","versao":2,"pagamentoId":"pag-123"}`.
+
+O `causationId` da resposta é o `messageId` do comando. A outbox pode reenviar mensagens; o OS deve tratar duplicatas. Execução inexistente, saga divergente e falhas técnicas não geram confirmação: o comando fica sujeito a novas tentativas e à DLQ. O resultado desejado para execução inexistente permanece para alinhamento com o grupo. A ordem entre cancelamento e estorno é responsabilidade do OS Service e ainda precisa ser acordada.

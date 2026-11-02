@@ -2,6 +2,7 @@ package br.com.fiap.soat15.execucaoservice.application;
 
 import br.com.fiap.soat15.execucaoservice.domain.model.ExecucaoTrabalho;
 import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
+import br.com.fiap.soat15.execucaoservice.contract.CancelarExecucaoCommand;
 import br.com.fiap.soat15.execucaoservice.domain.model.AgendamentoExecucao;
 import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
@@ -127,6 +128,7 @@ class ExecucaoServiceTest {
     }
 
     private static class RepositorioEmMemoria implements ExecucaoRepository {
+        public void cancelarExecucao(CancelarExecucaoCommand comando, Instant agora) { throw new UnsupportedOperationException(); }
         public ExecucaoTrabalho concluirExecucao(String osId, Instant agora) { throw new UnsupportedOperationException(); }
         public List<ExecucaoTrabalho> listarExecucoes() { throw new UnsupportedOperationException(); }
         public Optional<ExecucaoTrabalho> buscarExecucao(String osId) { throw new UnsupportedOperationException(); }
