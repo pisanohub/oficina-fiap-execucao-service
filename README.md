@@ -47,19 +47,20 @@ Variaveis de ambiente configuraveis (ver `src/main/resources/application.yaml`):
 
 Health check: `GET /actuator/health`.
 
+## Contratos
+
+- [Contratos provisórios de diagnóstico e Saga](docs/contrato-provisorio-saga.md)
+
 ## Observacao importante
 
-Este repositorio e um **esqueleto inicial**, criado apenas para dar um ponto de partida
-(build funcionando, estrutura de pastas, Dockerfile e manifestos Kubernetes basicos,
-pipeline de CI simples). Nenhuma logica de dominio foi implementada ainda.
+Este repositório começou como esqueleto. O primeiro incremento de diagnóstico, catálogo
+e cotação já usa DynamoDB e as mesmas rotas HTTP em todos os ambientes. O contrato
+`AgendarExecucao` está tipado e documentado, mas o consumo SQS, a reserva de peças,
+a fila de trabalho, a autenticação e o deploy integrado ainda estão pendentes.
 
-Quem assumir este servico deve seguir o planejamento completo em
-`documentacao/divisao-tarefas-fase4.md`, no repositorio principal do grupo, incluindo:
+Próximas etapas do serviço:
 
-- Modelagem do dominio (catalogo de servicos e estoque de pecas, hoje no monolito).
-- Consumo das filas SQS do fluxo de Saga (comando de envio para execucao / evento de
-  execucao concluida).
-- Integracao DynamoDB real (tabela ainda nao provisionada).
-- Circuit Breaker nas chamadas sincronas de consulta de status.
-- Testes unitarios, cobertura minima de 80%, fluxo BDD.
-- Pipeline de deploy em Kubernetes (este CI ainda so faz build + testes).
+- Reserva atômica de peças, fila de trabalho e consumo/publicação SQS da Saga.
+- Autenticação/autorização das rotas e acesso interno entre serviços.
+- Infraestrutura DynamoDB/SQS no ambiente do grupo, cobertura mínima de 80%, BDD,
+  quality gate e deploy automatizado. O CI atual ainda executa apenas build e testes.
