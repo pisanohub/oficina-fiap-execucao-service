@@ -32,6 +32,11 @@ spec:
             - containerPort: 8080
               name: http
 
+          envFrom:
+
+            - configMapRef:
+                name: execucao-service-config
+
           resources:
             requests:
               memory: "256Mi"
