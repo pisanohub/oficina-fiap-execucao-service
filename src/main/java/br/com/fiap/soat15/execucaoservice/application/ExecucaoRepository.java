@@ -21,6 +21,8 @@ public interface ExecucaoRepository {
 
     ExecucaoTrabalho iniciarExecucao(String osId, Instant agora);
 
+    ExecucaoTrabalho concluirExecucao(String osId, Instant agora);
+
     Diagnostico iniciarDiagnostico(String osId, Instant agora);
 
     Diagnostico atualizarItens(String osId, long versaoEsperada, List<ItemSolicitado> itens, Instant agora);

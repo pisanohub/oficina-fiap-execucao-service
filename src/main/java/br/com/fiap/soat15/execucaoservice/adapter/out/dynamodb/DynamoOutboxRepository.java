@@ -82,7 +82,8 @@ public class DynamoOutboxRepository implements OutboxRepository {
                 Instant.parse(item.get("occurredAt").s()), item.get("orcamentoId").s(),
                 Integer.parseInt(item.get("versaoOrcamento").n()), item.get("pagamentoId").s(),
                 item.containsKey("motivo") ? item.get("motivo").s() : null,
-                item.containsKey("itemId") ? item.get("itemId").s() : null);
+                item.containsKey("itemId") ? item.get("itemId").s() : null,
+                item.containsKey("iniciadaEm") ? Instant.parse(item.get("iniciadaEm").s()) : null);
     }
 
     private Map<String, AttributeValue> chave(OutboxEvent evento) {

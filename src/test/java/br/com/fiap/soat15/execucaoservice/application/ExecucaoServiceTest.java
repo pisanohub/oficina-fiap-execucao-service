@@ -127,6 +127,7 @@ class ExecucaoServiceTest {
     }
 
     private static class RepositorioEmMemoria implements ExecucaoRepository {
+        public ExecucaoTrabalho concluirExecucao(String osId, Instant agora) { throw new UnsupportedOperationException(); }
         public List<ExecucaoTrabalho> listarExecucoes() { throw new UnsupportedOperationException(); }
         public Optional<ExecucaoTrabalho> buscarExecucao(String osId) { throw new UnsupportedOperationException(); }
         public ExecucaoTrabalho iniciarExecucao(String osId, Instant agora) { throw new UnsupportedOperationException(); }

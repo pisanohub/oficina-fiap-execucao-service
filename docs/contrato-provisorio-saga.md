@@ -83,7 +83,7 @@ Eventos enviados por Execução para `execucao-resultados`:
 | --- | --- | --- |
 | `ExecucaoAgendada` | `AGENDADA` | Implementado nesta branch |
 | `ExecucaoIniciada` | `EM_EXECUCAO` | Implementado nesta branch |
-| `ExecucaoConcluida` | `CONCLUIDA` | Proposta; ainda não implementado |
+| `ExecucaoConcluida` | `CONCLUIDA` | Implementado nesta branch |
 | `ExecucaoRejeitada` | Sem status; envia motivo | Implementado |
 
 O status descreve a execução. O OS Service decide como atualizar a OS; essa regra e as compensações ainda precisam ser validadas com o grupo. Exemplos completos estão logo abaixo, em **Mensagens de integração**.
@@ -102,7 +102,7 @@ Cada JSON é o **corpo de uma mensagem SQS**. OS envia `AgendarExecucao` para `e
 | `ExecucaoAgendada` | Execução → OS | Implementado |
 | `ExecucaoRejeitada` | Execução → OS | Implementado |
 | `ExecucaoIniciada` | Execução → OS | Implementado nesta branch |
-| `ExecucaoConcluida` | Execução → OS | Proposta, não implementado |
+| `ExecucaoConcluida` | Execução → OS | Implementado nesta branch |
 
 ### `ExecucaoAgendada` — implementado
 
@@ -158,29 +158,29 @@ Quando o operador inicia a execução, o serviço publica o evento abaixo. O `op
 }
 ```
 
-### Conclusão — proposta para validação
+### `ExecucaoConcluida` — implementado nesta branch
 
-Sugestão de estados internos da execução: `AGENDADA → EM_EXECUCAO → CONCLUIDA`. Após a ação do operador, o serviço publicaria `ExecucaoIniciada` ou `ExecucaoConcluida` em `execucao-resultados`. O início está implementado nesta branch; conclusão e seu evento continuam como proposta.
+Sugestão de estados internos da execução: `AGENDADA → EM_EXECUCAO → CONCLUIDA`. Após a ação do operador, o serviço publica `ExecucaoIniciada` ou `ExecucaoConcluida` em `execucao-resultados`.
 
-Exemplo **proposto** do corpo de `ExecucaoConcluida`:
+Exemplo do corpo de `ExecucaoConcluida`; os identificadores são ilustrativos:
 
 ```json
 {
   "schemaVersion": 1,
   "messageId": "d1e4ea61-4bc0-4cf9-90ef-4c86c8417f21",
-  "operationId": "concluir-execucao-os-123",
+  "operationId": "concluir-execucao-identificador-da-os",
   "type": "ExecucaoConcluida",
   "sagaId": "saga-123",
   "osId": "123",
-  "causationId": "id-da-acao-de-conclusao",
+  "causationId": "concluir-execucao-identificador-da-os",
   "occurredAt": "2026-11-02T17:30:00Z",
-  "payload": {"status":"CONCLUIDA","iniciadaEm":"2026-11-02T15:00:00Z","concluidaEm":"2026-11-02T17:30:00Z"}
+  "payload": {"status":"CONCLUIDA","iniciadaEm":"2026-11-02T15:00:00Z","concluidaEm":"2026-11-02T17:30:00Z","orcamentoId":"orc-123","versao":2,"pagamentoId":"pag-123"}
 }
 ```
 
-Os horários permitem medir a duração do trabalho, como no monólito. O `ExecucaoIniciada` implementado usa o mesmo envelope e inclui `iniciadaEm` e `status` no payload. Identidades das operações e `causationId` para ações HTTP ainda precisam ser definidos. Cada ação deve ter uma identidade própria estável em repetições; consumidores devem tolerar entrega duplicada.
+Os horários permitem medir a duração do trabalho, como no monólito. O `ExecucaoIniciada` implementado usa o mesmo envelope e inclui `iniciadaEm` e `status` no payload. Para início e conclusão, `operationId` e `causationId` são derivados deterministicamente da OS. Cada ação deve ter uma identidade própria estável em repetições; consumidores devem tolerar entrega duplicada.
 
-**Ponto para decisão com OS e infraestrutura:** o desenho informado pelo Pedro coloca a OS em `EM_EXECUCAO` após confirmação do pagamento; no monólito esse estado registra o início do trabalho. Uma alternativa é a OS mudar para `EM_EXECUCAO` ao receber `ExecucaoIniciada`, mas o estado da OS entre pagamento e início precisa ser definido. Também faltam a rota de conclusão e o tratamento de cancelamento e compensação.
+**Ponto para decisão com OS e infraestrutura:** o desenho informado pelo Pedro coloca a OS em `EM_EXECUCAO` após confirmação do pagamento; no monólito esse estado registra o início do trabalho. Uma alternativa é a OS mudar para `EM_EXECUCAO` ao receber `ExecucaoIniciada`, mas o estado da OS entre pagamento e início precisa ser definido. Ainda falta o tratamento de cancelamento e compensação.
 
 ## Guia de integração HTTP
 
@@ -226,16 +226,17 @@ Exemplo de resposta `200 OK`:
 
 Itens ausentes ou inativos e requisições inválidas podem retornar `400`. O Billing é responsável por formar e congelar o orçamento conforme o contrato a ser alinhado.
 
-## Fila de trabalho — implementação inicial nesta branch
+## Fila de trabalho — implementação nesta branch
 
 - `GET /api/v1/execucoes`: lista execuções registradas. A consulta atual percorre a tabela DynamoDB inteira e não tem paginação HTTP; é uma implementação inicial para baixo volume.
 - `GET /api/v1/execucoes/{osId}`: consulta uma execução; retorna `404` se não existir.
+- `POST /api/v1/execucoes/{osId}/conclusao`: conclui uma execução `EM_EXECUCAO`, sem corpo; retorna `200` com o registro. Repetições retornam o mesmo resultado; execução inexistente retorna `404` e estado inválido, `409`.
 - `POST /api/v1/execucoes/{osId}/inicio`: inicia uma execução `AGENDADA`, sem corpo. Retorna `200` com o registro; uma repetição com estado `EM_EXECUCAO` devolve o registro existente. Outros estados retornam `409`; execução inexistente, `404`.
 
 Exemplo de resposta após início:
 
 ```json
-{"osId":"123","status":"EM_EXECUCAO","sagaId":"saga-123","itens":[{"tipo":"PECA","itemId":"filtro-oleo","quantidade":1}],"agendadaEm":"2026-11-02T14:00:00Z","iniciadaEm":"2026-11-02T15:00:00Z"}
+{"osId":"123","status":"EM_EXECUCAO","sagaId":"saga-123","itens":[{"tipo":"PECA","itemId":"filtro-oleo","quantidade":1}],"agendadaEm":"2026-11-02T14:00:00Z","iniciadaEm":"2026-11-02T15:00:00Z","concluidaEm":null}
 ```
 
-O início grava a transição e a outbox na mesma transação. O evento `ExecucaoIniciada` usa `operationId` e `causationId` determinísticos derivados da OS; seu payload contém `status: EM_EXECUCAO`, `iniciadaEm`, `orcamentoId`, `versao` e `pagamentoId`. O evento `ExecucaoAgendada` passa a conter `status: AGENDADA`; rejeições continuam informando o motivo, pois não há execução criada. O publicador pode reenviar mensagens e a ordem de entrega entre eventos não é garantida: o OS Service deve lidar com duplicatas e eventos fora de ordem. Contratos e sincronização de status seguem sujeitos à validação do grupo. A conclusão continua como proposta.
+O início grava a transição e a outbox na mesma transação. O evento `ExecucaoIniciada` usa `operationId` e `causationId` determinísticos derivados da OS; seu payload contém `status: EM_EXECUCAO`, `iniciadaEm`, `orcamentoId`, `versao` e `pagamentoId`. O evento `ExecucaoAgendada` passa a conter `status: AGENDADA`; rejeições continuam informando o motivo, pois não há execução criada. O publicador pode reenviar mensagens e a ordem de entrega entre eventos não é garantida: o OS Service deve lidar com duplicatas e eventos fora de ordem. A conclusão também grava a mudança de estado e a outbox juntas. O contrato e a sincronização de status seguem sujeitos à validação do grupo.

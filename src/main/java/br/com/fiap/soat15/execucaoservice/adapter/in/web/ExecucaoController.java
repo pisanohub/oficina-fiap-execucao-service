@@ -39,6 +39,11 @@ public class ExecucaoController {
         return service.iniciarExecucao(osId);
     }
 
+    @PostMapping("/api/v1/execucoes/{osId}/conclusao")
+    public ExecucaoTrabalho concluirExecucao(@PathVariable String osId) {
+        return service.concluirExecucao(osId);
+    }
+
     @PostMapping("/api/v1/catalogo")
     public ResponseEntity<Void> salvarItem(@RequestBody ItemCatalogo item) {
         service.salvarItemCatalogo(item);
