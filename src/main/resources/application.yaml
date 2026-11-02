@@ -12,6 +12,10 @@ dynamodb:
 
 sqs:
   execucao-resultados-url: ${SQS_EXECUCAO_RESULTADOS_URL:}
+  execucao-comandos-url: ${SQS_EXECUCAO_COMANDOS_URL:}
+  consumer:
+    enabled: ${SQS_CONSUMER_ENABLED:false}
+    poll-delay-ms: ${SQS_CONSUMER_POLL_DELAY_MS:5000}
 
 outbox:
   publisher:
