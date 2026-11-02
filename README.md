@@ -57,7 +57,7 @@ Health check: `GET /actuator/health`.
 
 ## Contratos
 
-- [Arquitetura do Execução Service](docs/arquitetura-execucao.md)
+- [Arquitetura do Execução Service e configuração das DLQs](docs/arquitetura-execucao.md)
 - [Contratos provisórios de diagnóstico e Saga](docs/contrato-provisorio-saga.md)
 
 ## Observacao importante
