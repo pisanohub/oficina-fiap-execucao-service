@@ -37,6 +37,12 @@ final class DynamoCatalogoRepository extends DynamoRepositorySupport {
         if (catalogo.quantidadeEstoque() != null) {
             item.put("quantidadeEstoque", numero(catalogo.quantidadeEstoque()));
         }
+        if (catalogo.descricao() != null) {
+            item.put("descricao", texto(catalogo.descricao()));
+        }
+        if (catalogo.tempoEstimadoMinutos() != null) {
+            item.put("tempoEstimadoMinutos", numero(catalogo.tempoEstimadoMinutos()));
+        }
         try {
             dynamo.putItem(PutItemRequest.builder().tableName(tableName).item(item)
                     .conditionExpression("attribute_not_exists(pk)").build());
@@ -83,11 +89,33 @@ final class DynamoCatalogoRepository extends DynamoRepositorySupport {
 
     public ItemCatalogo atualizarItemCatalogo(TipoItem tipo, String itemId, AtualizacaoItemCatalogo atualizacao) {
         // Não toca em quantidadeEstoque: o estoque só muda por reserva, devolução, reposição ou ajuste.
-        return atualizar(tipo, itemId, "SET nome = :nome, precoUnitario = :preco, ativo = :ativo",
-                "attribute_exists(pk)",
-                Map.of(":nome", texto(atualizacao.nome()),
-                        ":preco", AttributeValue.builder().n(atualizacao.precoUnitario().toPlainString()).build(),
-                        ":ativo", AttributeValue.builder().bool(atualizacao.ativo()).build()));
+        // Campos opcionais ausentes na atualização são removidos (a atualização substitui os dados do item).
+        List<String> definicoes = new ArrayList<>(List.of("nome = :nome", "precoUnitario = :preco", "ativo = :ativo"));
+        List<String> remocoes = new ArrayList<>();
+        Map<String, AttributeValue> valores = new HashMap<>();
+        valores.put(":nome", texto(atualizacao.nome()));
+        valores.put(":preco", AttributeValue.builder().n(atualizacao.precoUnitario().toPlainString()).build());
+        valores.put(":ativo", AttributeValue.builder().bool(atualizacao.ativo()).build());
+        if (atualizacao.descricao() != null) {
+            definicoes.add("descricao = :descricao");
+            valores.put(":descricao", texto(atualizacao.descricao()));
+        } else {
+            remocoes.add("descricao");
+        }
+        if (atualizacao.tempoEstimadoMinutos() != null) {
+            definicoes.add("tempoEstimadoMinutos = :tempo");
+            valores.put(":tempo", numero(atualizacao.tempoEstimadoMinutos()));
+        } else {
+            remocoes.add("tempoEstimadoMinutos");
+        }
+        String expressao = "SET " + String.join(", ", definicoes)
+                + (remocoes.isEmpty() ? "" : " REMOVE " + String.join(", ", remocoes));
+        return atualizar(tipo, itemId, expressao, "attribute_exists(pk)", valores);
+    }
+
+    public void inativarItemCatalogo(TipoItem tipo, String itemId) {
+        atualizar(tipo, itemId, "SET ativo = :ativo", "attribute_exists(pk)",
+                Map.of(":ativo", AttributeValue.builder().bool(false).build()));
     }
 
     public ItemCatalogo reporEstoque(String itemId, int quantidade) {
@@ -118,8 +146,11 @@ final class DynamoCatalogoRepository extends DynamoRepositorySupport {
     private ItemCatalogo mapear(TipoItem tipo, String itemId, Map<String, AttributeValue> item) {
         Integer quantidade = item.containsKey("quantidadeEstoque")
                 ? Integer.valueOf(item.get("quantidadeEstoque").n()) : null;
-        return new ItemCatalogo(tipo, itemId, item.get("nome").s(),
-                new BigDecimal(item.get("precoUnitario").n()), item.get("ativo").bool(), quantidade);
+        String descricao = item.containsKey("descricao") ? item.get("descricao").s() : null;
+        Integer tempoEstimado = item.containsKey("tempoEstimadoMinutos")
+                ? Integer.valueOf(item.get("tempoEstimadoMinutos").n()) : null;
+        return new ItemCatalogo(tipo, itemId, item.get("nome").s(), descricao,
+                new BigDecimal(item.get("precoUnitario").n()), item.get("ativo").bool(), quantidade, tempoEstimado);
     }
 
 }

@@ -41,6 +41,8 @@ public interface ExecucaoRepository {
 
     ItemCatalogo atualizarItemCatalogo(TipoItem tipo, String itemId, AtualizacaoItemCatalogo atualizacao);
 
+    void inativarItemCatalogo(TipoItem tipo, String itemId);
+
     ItemCatalogo reporEstoque(String itemId, int quantidade);
 
     ItemCatalogo ajustarEstoque(String itemId, int quantidadeEstoque);

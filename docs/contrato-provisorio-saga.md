@@ -434,8 +434,9 @@ Regras: de 1 a 20 itens, sem repetir `tipo`+`itemId`. A cotação **não** cria 
 | Rota | Função |
 | --- | --- |
 | `POST /api/v1/catalogo` | Cadastrar peça ou serviço |
-| `GET /api/v1/catalogo` e `GET /api/v1/catalogo/{tipo}/{itemId}` | Listar (filtros `tipo` e `ativo`) e consultar itens e estoque |
-| `PUT /api/v1/catalogo/{tipo}/{itemId}` | Atualizar nome, preço e ativo (inativar) |
+| `GET /api/v1/catalogo` e `GET /api/v1/catalogo/{tipo}/{itemId}` | Listar (filtros `tipo`, `ativo` e `nome`) e consultar itens e estoque |
+| `PUT /api/v1/catalogo/{tipo}/{itemId}` | Atualizar nome, descrição, preço, ativo e tempo estimado (serviço) |
+| `DELETE /api/v1/catalogo/{tipo}/{itemId}` | Inativar o item (soft delete) |
 | `POST /api/v1/catalogo/PECA/{itemId}/estoque/reposicao` | Somar peças ao estoque |
 | `PUT /api/v1/catalogo/PECA/{itemId}/estoque` | Definir o estoque (ajuste) |
 | `POST /api/v1/diagnosticos/{osId}/inicio` | Iniciar o diagnóstico |

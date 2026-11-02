@@ -15,9 +15,11 @@ import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.text.Normalizer;
 import java.time.Clock;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 @Service
@@ -92,8 +94,13 @@ public class ExecucaoService {
         repository.salvarItemCatalogo(item);
     }
 
-    public List<ItemCatalogo> listarCatalogo(TipoItem tipo, Boolean ativo) {
-        return repository.listarItensCatalogo(tipo, ativo);
+    public List<ItemCatalogo> listarCatalogo(TipoItem tipo, Boolean ativo, String nome) {
+        List<ItemCatalogo> itens = repository.listarItensCatalogo(tipo, ativo);
+        if (nome == null || nome.isBlank()) {
+            return itens;
+        }
+        String busca = normalizar(nome);
+        return itens.stream().filter(item -> normalizar(item.nome()).contains(busca)).toList();
     }
 
     public ItemCatalogo consultarItemCatalogo(TipoItem tipo, String itemId) {
@@ -102,14 +109,22 @@ public class ExecucaoService {
                 .orElseThrow(() -> new ItemCatalogoNaoEncontradoException(tipo, itemId.trim()));
     }
 
-    public ItemCatalogo atualizarItemCatalogo(TipoItem tipo, String itemId, String nome,
-                                              BigDecimal precoUnitario, Boolean ativo) {
+    public ItemCatalogo atualizarItemCatalogo(TipoItem tipo, String itemId, String nome, String descricao,
+                                              BigDecimal precoUnitario, Boolean ativo, Integer tempoEstimadoMinutos) {
         validarItemId(tipo, itemId);
         if (ativo == null) {
             throw new IllegalArgumentException("ativo é obrigatório");
         }
+        if (tipo == TipoItem.PECA && tempoEstimadoMinutos != null) {
+            throw new IllegalArgumentException("Peça não possui tempo estimado");
+        }
         return repository.atualizarItemCatalogo(tipo, itemId.trim(),
-                new AtualizacaoItemCatalogo(nome, precoUnitario, ativo));
+                new AtualizacaoItemCatalogo(nome, descricao, precoUnitario, ativo, tempoEstimadoMinutos));
+    }
+
+    public void inativarItemCatalogo(TipoItem tipo, String itemId) {
+        validarItemId(tipo, itemId);
+        repository.inativarItemCatalogo(tipo, itemId.trim());
     }
 
     public ItemCatalogo reporEstoque(TipoItem tipo, String itemId, int quantidade) {
@@ -137,6 +152,10 @@ public class ExecucaoService {
             return new ItemCotado(item.tipo(), item.itemId(), catalogo.nome(), item.quantidade(), catalogo.precoUnitario());
         }).toList();
         return new Cotacao("BRL", clock.instant(), cotados);
+    }
+
+    private String normalizar(String texto) {
+        return Normalizer.normalize(texto, Normalizer.Form.NFD).replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT).trim();
     }
 
     private void validarItemId(TipoItem tipo, String itemId) {
