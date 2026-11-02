@@ -1,6 +1,7 @@
 package br.com.fiap.soat15.execucaoservice.adapter.in.sqs;
 
 import br.com.fiap.soat15.execucaoservice.application.ExecucaoService;
+import br.com.fiap.soat15.execucaoservice.application.PecaIndisponivelException;
 import br.com.fiap.soat15.execucaoservice.contract.AgendarExecucaoCommand;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,7 +40,11 @@ public class AgendarExecucaoConsumer {
         for (var mensagem : mensagens) {
             try {
                 var comando = mapper.readValue(mensagem.body(), AgendarExecucaoCommand.class);
-                service.agendarExecucao(comando);
+                try {
+                    service.agendarExecucao(comando);
+                } catch (PecaIndisponivelException rejeitada) {
+                    log.info("Agendamento rejeitado por peça indisponível: {}", comando.operationId());
+                }
                 sqs.deleteMessage(DeleteMessageRequest.builder().queueUrl(queueUrl)
                         .receiptHandle(mensagem.receiptHandle()).build());
             } catch (RuntimeException falha) {

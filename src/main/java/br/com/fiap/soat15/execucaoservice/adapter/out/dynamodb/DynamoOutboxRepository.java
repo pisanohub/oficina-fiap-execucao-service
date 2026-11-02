@@ -80,7 +80,9 @@ public class DynamoOutboxRepository implements OutboxRepository {
         return new OutboxEvent(item.get("operationId").s(), item.get("type").s(),
                 item.get("sagaId").s(), item.get("osId").s(), item.get("causationId").s(),
                 Instant.parse(item.get("occurredAt").s()), item.get("orcamentoId").s(),
-                Integer.parseInt(item.get("versaoOrcamento").n()), item.get("pagamentoId").s());
+                Integer.parseInt(item.get("versaoOrcamento").n()), item.get("pagamentoId").s(),
+                item.containsKey("motivo") ? item.get("motivo").s() : null,
+                item.containsKey("itemId") ? item.get("itemId").s() : null);
     }
 
     private Map<String, AttributeValue> chave(OutboxEvent evento) {

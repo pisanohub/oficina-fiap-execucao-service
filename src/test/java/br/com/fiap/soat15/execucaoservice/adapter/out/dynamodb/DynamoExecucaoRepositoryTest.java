@@ -84,11 +84,26 @@ class DynamoExecucaoRepositoryTest {
     @Test
     void estoqueInsuficienteGeraFalhaDeNegocioIdentificavel() {
         when(dynamo.transactWriteItems(any(TransactWriteItemsRequest.class)))
-                .thenThrow(cancelada("ConditionalCheckFailed", "None", "None", "None"));
+                .thenThrow(cancelada("ConditionalCheckFailed", "None", "None", "None"))
+                .thenReturn(software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsResponse.builder().build());
+        when(dynamo.getItem(any(GetItemRequest.class)))
+                .thenReturn(GetItemResponse.builder().build(), GetItemResponse.builder().build(),
+                        GetItemResponse.builder().item(Map.of("ativo", AttributeValue.builder().bool(true).build(),
+                                "quantidadeEstoque", AttributeValue.builder().n("1").build())).build());
 
         assertThatThrownBy(() -> repository.agendarExecucao(comando(List.of(
                 new ItemSolicitado(TipoItem.PECA, "filtro", 2))), agora))
                 .isInstanceOf(PecaIndisponivelException.class).hasMessageContaining("filtro");
+        var captor = ArgumentCaptor.forClass(TransactWriteItemsRequest.class);
+        verify(dynamo, times(2)).transactWriteItems(captor.capture());
+        var rejeicao = captor.getAllValues().get(1).transactItems();
+        assertThat(rejeicao.get(1).put().item().get("type").s()).isEqualTo("ExecucaoRejeitada");
+        when(dynamo.getItem(any(GetItemRequest.class)))
+                .thenReturn(GetItemResponse.builder().item(rejeicao.get(0).put().item()).build());
+        assertThatThrownBy(() -> repository.agendarExecucao(comando(List.of(
+                new ItemSolicitado(TipoItem.PECA, "filtro", 2))), agora.plusSeconds(1)))
+                .isInstanceOf(PecaIndisponivelException.class);
+        verify(dynamo, times(2)).transactWriteItems(any(TransactWriteItemsRequest.class));
     }
 
     @Test
