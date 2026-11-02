@@ -57,8 +57,9 @@ Health check: `GET /actuator/health`.
 
 ## Contratos
 
+- [Fluxo de negócio: quem chama o quê e o que muda cada status](docs/fluxo-de-negocio.md)
 - [Como o serviço funciona: endpoints, consumo e publicação de mensagens](docs/funcionamento-do-servico.md)
-- [Arquitetura do Execução Service e configuração das DLQs](docs/arquitetura-execucao.md)
+- [Collection do Postman com o fluxo completo](docs/execucao-service.postman_collection.json)- [Arquitetura do Execução Service e configuração das DLQs](docs/arquitetura-execucao.md)
 - [Guia de integração para OS Service e Billing: filas, mensagens, campos e HTTP](docs/contrato-provisorio-saga.md)
 
 ## Observacao importante
