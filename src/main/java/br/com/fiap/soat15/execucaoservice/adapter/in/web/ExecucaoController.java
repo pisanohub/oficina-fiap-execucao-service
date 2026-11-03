@@ -6,6 +6,7 @@ import br.com.fiap.soat15.execucaoservice.domain.model.Cotacao;
 import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
+import br.com.fiap.soat15.execucaoservice.domain.model.PaginaExecucoes;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -22,6 +23,8 @@ import java.util.List;
 
 @RestController
 public class ExecucaoController {
+    public static final String CABECALHO_PROXIMA_PAGINA = "X-Proxima-Pagina";
+
     private final ExecucaoService service;
 
     public ExecucaoController(ExecucaoService service) {
@@ -29,8 +32,20 @@ public class ExecucaoController {
     }
 
     @GetMapping("/api/v1/execucoes")
-    public List<ExecucaoTrabalho> listarExecucoes() {
-        return service.listarExecucoes();
+    public ResponseEntity<List<ExecucaoTrabalho>> listarExecucoes(@RequestParam(required = false) Integer limite,
+                                                                  @RequestParam(required = false) String pagina) {
+        if (limite == null) {
+            if (pagina != null) {
+                throw new IllegalArgumentException("pagina exige limite");
+            }
+            return ResponseEntity.ok(service.listarExecucoes());
+        }
+        PaginaExecucoes resultado = service.listarExecucoes(limite, pagina);
+        ResponseEntity.BodyBuilder resposta = ResponseEntity.ok();
+        if (resultado.proximaPagina() != null) {
+            resposta.header(CABECALHO_PROXIMA_PAGINA, resultado.proximaPagina());
+        }
+        return resposta.body(resultado.itens());
     }
 
     @GetMapping("/api/v1/execucoes/{osId}")

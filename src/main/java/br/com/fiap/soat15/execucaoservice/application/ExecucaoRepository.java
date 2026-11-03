@@ -8,6 +8,7 @@ import br.com.fiap.soat15.execucaoservice.contract.CancelarExecucaoCommand;
 import br.com.fiap.soat15.execucaoservice.domain.model.AtualizacaoItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
+import br.com.fiap.soat15.execucaoservice.domain.model.PaginaExecucoes;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
 
 import java.time.Instant;
@@ -20,6 +21,8 @@ public interface ExecucaoRepository {
     void cancelarExecucao(CancelarExecucaoCommand comando, Instant agora);
 
     List<ExecucaoTrabalho> listarExecucoes();
+
+    PaginaExecucoes listarExecucoes(int limite, String pagina);
 
     Optional<ExecucaoTrabalho> buscarExecucao(String osId);
 

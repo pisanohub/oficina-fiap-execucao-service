@@ -16,7 +16,6 @@ pecas.
 - AWS SDK v2
   - SQS (fila de execucao/diagnostico)
   - DynamoDB Enhanced Client (catalogo de servicos e estoque de pecas)
-- Resilience4j (Circuit Breaker nas chamadas sincronas)
 - springdoc-openapi (Swagger UI)
 - Lombok
 - Maven + Maven Wrapper
@@ -50,6 +49,7 @@ Variaveis de ambiente configuraveis (ver `src/main/resources/application.yaml`):
 | `SQS_EXECUCAO_COMANDOS_URL` | vazio | URL da fila de comandos |
 | `SQS_CONSUMER_ENABLED` | `false` | Ativa o consumidor após configurar a fila de comandos |
 | `SQS_CONSUMER_POLL_DELAY_MS` | `5000` | Intervalo entre leituras da fila de comandos |
+| `SQS_CONSUMER_MAX_MESSAGES` | `10` | Mensagens lidas por vez da fila de comandos (1 a 10) |
 | `OUTBOX_PUBLISHER_ENABLED` | `false` | Ativa o publicador após configurar a fila |
 | `OUTBOX_POLL_DELAY_MS` | `5000` | Intervalo entre buscas na outbox |
 

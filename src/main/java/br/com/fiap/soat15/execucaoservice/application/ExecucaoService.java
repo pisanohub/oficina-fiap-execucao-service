@@ -11,6 +11,7 @@ import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCotado;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
+import br.com.fiap.soat15.execucaoservice.domain.model.PaginaExecucoes;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
 import org.springframework.stereotype.Service;
 
@@ -25,6 +26,7 @@ import java.util.Set;
 @Service
 public class ExecucaoService {
     private static final int LIMITE_ESTOQUE = 1_000_000;
+    private static final int LIMITE_PAGINA = 100;
 
     private final ExecucaoRepository repository;
     private final Clock clock;
@@ -49,6 +51,13 @@ public class ExecucaoService {
 
     public List<ExecucaoTrabalho> listarExecucoes() {
         return repository.listarExecucoes();
+    }
+
+    public PaginaExecucoes listarExecucoes(int limite, String pagina) {
+        if (limite < 1 || limite > LIMITE_PAGINA) {
+            throw new IllegalArgumentException("limite deve estar entre 1 e " + LIMITE_PAGINA);
+        }
+        return repository.listarExecucoes(limite, pagina);
     }
 
     public ExecucaoTrabalho consultarExecucao(String osId) {

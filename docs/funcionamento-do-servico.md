@@ -32,7 +32,7 @@ flowchart LR
 
 ## 2. Stack e estrutura do código
 
-Java 21, Spring Boot 4.0.5, AWS SDK v2 (DynamoDB e SQS), Maven, JaCoCo. O pom também declara Lombok, springdoc-openapi, Resilience4j e Validation, mas o código atual não os utiliza de fato (ver [seção 11](#11-lacunas-e-pontos-de-atenção)).
+Java 21, Spring Boot 4.0.5, AWS SDK v2 (DynamoDB e SQS), Maven, JaCoCo. O Swagger vem do springdoc-openapi 3.x (compatível com o Spring Boot 4); o pom também declara Lombok e Validation, que o código atual não utiliza (ver [seção 11](#11-lacunas-e-pontos-de-atenção)). O Resilience4j foi removido, porque o serviço não faz chamadas síncronas a outros serviços.
 
 Arquitetura em camadas, estilo hexagonal (`br.com.fiap.soat15.execucaoservice`):
 
@@ -120,7 +120,7 @@ Corpo: `{"itens":[{"tipo":"PECA","itemId":"filtro-oleo","quantidade":2}]}`. O Bi
 
 | Método e rota | Função | Respostas |
 | --- | --- | --- |
-| `GET /api/v1/execucoes` | Lista todas as execuções (Scan, sem paginação). | `200` |
+| `GET /api/v1/execucoes?limite=&pagina=` | Lista as execuções. Sem `limite`, devolve todas (Scan). Com `limite` (1 a 100), devolve uma página e informa o token da próxima no cabeçalho `X-Proxima-Pagina` (ausente na última página); esse token é enviado como `pagina` na chamada seguinte. O token é opaco: não é um número e não se monta à mão. O corpo continua sendo a lista. | `200`; `400` limite ou pagina inválidos |
 | `GET /api/v1/execucoes/{osId}` | Consulta uma execução. | `200`; `404` |
 | `POST /api/v1/execucoes/{osId}/inicio` | `AGENDADA → EM_EXECUCAO`. Idempotente se já estiver em execução. | `200`; `404`; `409` |
 | `POST /api/v1/execucoes/{osId}/conclusao` | `EM_EXECUCAO → CONCLUIDA`. Idempotente se já concluída. | `200`; `404`; `409` |
@@ -136,13 +136,15 @@ Não existe rota HTTP para criar ou cancelar execução: isso só acontece por m
 
 Classe: `AgendarExecucaoConsumer`. Só é criada se `SQS_CONSUMER_ENABLED=true`; nesse caso `SQS_EXECUCAO_COMANDOS_URL` é obrigatória, senão a aplicação não sobe.
 
-1. A cada `SQS_CONSUMER_POLL_DELAY_MS` (padrão 5 s) faz `receiveMessage` com 1 mensagem e long polling de 10 s.
+1. A cada `SQS_CONSUMER_POLL_DELAY_MS` (padrão 5 s) faz `receiveMessage` com até `SQS_CONSUMER_MAX_MESSAGES` mensagens (padrão e máximo 10) e long polling de 10 s. As mensagens do lote são processadas em sequência e a falha de uma não impede as demais.
 2. Lê o campo `type` do JSON:
    - `AgendarExecucao` → desserializa em `AgendarExecucaoCommand` → `ExecucaoService.agendarExecucao`.
    - `CancelarExecucao` → desserializa em `CancelarExecucaoCommand` → `ExecucaoService.cancelarExecucao`.
    - qualquer outro → `IllegalArgumentException`.
 3. Se o processamento termina sem exceção, **apaga a mensagem** da fila.
-4. Se lança `RuntimeException`, só registra um `warn` e **não apaga**: o SQS reentrega após o visibility timeout (60 s) e, após `maxReceiveCount` (3) recebimentos, move para `execucao-comandos-dlq`.
+4. Se lança `RuntimeException`, **não apaga** a mensagem, e o SQS a reentrega e, após `maxReceiveCount` (3) recebimentos, move para `execucao-comandos-dlq`. O consumidor distingue dois tipos de falha:
+   - **Permanente** (JSON inválido, envelope que não passa na validação, `type` desconhecido, `operationId` reutilizado com dados diferentes, `sagaId` divergente, OS que já tem execução): nunca vai funcionar em nova tentativa. Registra `ERROR` e libera a mensagem na hora (`ChangeMessageVisibility` com 0), então ela chega à DLQ em segundos em vez de minutos.
+   - **Transitória** (banco indisponível, peça inativa ou ausente, execução ainda inexistente no cancelamento): registra `WARN` com o erro e espera o tempo de visibilidade da fila (60 s no Terraform), porque uma nova tentativa pode dar certo.
 5. Exceção: `PecaIndisponivelException` no agendamento é tratada como resultado de negócio. O consumidor loga e apaga a mensagem, porque a rejeição já foi gravada na outbox.
 
 ### Envelope dos comandos (validado no construtor do record)
@@ -262,7 +264,9 @@ Tabela `execucao_service`, chaves `pk` e `sk` (string), cobrança `PAY_PER_REQUE
 | Operação de cancelamento | `OPERACAO#{operationId}` | `CANCELAMENTO` |
 | Evento de outbox | `OUTBOX#{operationId}` | `RESULTADO` |
 
-`GET /execucoes` e a busca de pendentes da outbox usam `Scan` (filtrando por `pk` com prefixo `OS#`/`sk = EXECUCAO` e `published = false`, respectivamente). Funciona para baixo volume; com mais dados será preciso um índice.
+`GET /execucoes` e a busca de pendentes da outbox usam `Scan` (filtrando por `pk` com prefixo `OS#`/`sk = EXECUCAO` e `published = false`, respectivamente). A listagem de execuções aceita paginação (o token `pagina` é a chave `pk`/`sk` do último item, em Base64 URL). O Scan percorre a tabela inteira a cada chamada, então o custo cresce com o volume.
+
+**Avaliação de índice (decisão: não implementar agora).** A tabela do Pedro não tem índice secundário, e criar um exige alterar a tabela e todos os pontos que gravam. Se o volume crescer, o desenho recomendado são dois índices esparsos: (1) um para a outbox pendente (atributo `gsi1pk = OUTBOX#PENDENTE`, removido ao publicar), que troca o `Scan` do publicador, executado a cada 5 s, por um `Query`; e (2) um por status da execução (`gsi2pk = EXECUCAO#<status>`, `gsi2sk = agendadaEm`), para listar a fila de trabalho já filtrada e ordenada. O primeiro é o mais importante, porque roda continuamente.
 
 ## 8. Contrato de integração entre os serviços
 
@@ -297,6 +301,7 @@ Arquivo `src/main/resources/application.yaml`, tudo por variável de ambiente:
 | `SQS_EXECUCAO_RESULTADOS_URL` | vazio | Fila onde publica resultados |
 | `SQS_CONSUMER_ENABLED` | `false` | Liga o consumidor |
 | `SQS_CONSUMER_POLL_DELAY_MS` | `5000` | Intervalo do consumidor |
+| `SQS_CONSUMER_MAX_MESSAGES` | `10` | Mensagens lidas por vez (1 a 10) |
 | `OUTBOX_PUBLISHER_ENABLED` | `false` | Liga o publicador |
 | `OUTBOX_POLL_DELAY_MS` | `5000` | Intervalo do publicador |
 
@@ -344,8 +349,7 @@ Itens que você citou como pendentes, mais o que a análise do código mostrou:
 **Observados no código**
 
 - O deploy (`deploy.yml`) não define `SQS_*` nem `OUTBOX_*` no ConfigMap. Então, **como está, o pod sobe com consumidor e publicador desligados** e o serviço não processa nem publica nada via SQS. É preciso adicionar as URLs das filas e as flags.
-- Resilience4j, springdoc-openapi (Swagger), Validation e Lombok estão no `pom.xml` sem uso no código (os controllers não usam Bean Validation e não há circuit breaker). Ou usa, ou tira do pom e do README, que ainda cita Swagger e Circuit Breaker.
-- `Scan` na listagem e na outbox, sem paginação HTTP (já registrado nos docs de arquitetura).
-- O consumidor lê **uma mensagem por vez** e uma exceção não esperada só vira log. Funciona, mas o `catch` genérico não distingue erro permanente (mensagem malformada) de transitório; todas passam por 3 tentativas antes da DLQ.
+- Validation e Lombok estão no `pom.xml` sem uso no código (os controllers não usam Bean Validation). Ou usa, ou tira do pom.
+- `Scan` na outbox e na listagem de execuções sem `limite`, e na listagem do catálogo (sem paginação, ordenada em memória). A listagem de execuções já aceita paginação; o índice foi avaliado e fica para quando o volume crescer.
 - A cobertura mínima de 80% e o quality gate são exigência do desafio e ainda não estão no CI (o JaCoCo só gera relatório). BDD também consta como pendente no README.
 - Decisões em aberto com o grupo: quando a OS passa a `EM_EXECUCAO`, quem gera o `sagaId`, resposta para cancelamento de execução inexistente e ordem cancelamento/estorno.
