@@ -1,7 +1,9 @@
 package br.com.fiap.soat15.execucaoservice.adapter.out.sqs;
 
+import br.com.fiap.soat15.execucaoservice.application.ExecucaoMetricas;
 import br.com.fiap.soat15.execucaoservice.application.OutboxEvent;
 import br.com.fiap.soat15.execucaoservice.application.OutboxRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
@@ -29,7 +31,8 @@ class OutboxPublisherTest {
     private final Instant agora = Instant.parse("2026-11-02T14:00:00Z");
     private final OutboxEvent evento = new OutboxEvent("op-123", "ExecucaoAgendada", "saga-123", "123",
             "causa-123", agora, "orc-123", 2, "pag-123");
-    private final OutboxPublisher publisher = new OutboxPublisher(repository, sqs,
+    private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    private final OutboxPublisher publisher = new OutboxPublisher(repository, new ExecucaoMetricas(registry), sqs,
             Clock.fixed(agora, ZoneOffset.UTC), "http://localhost:9324/queue/execucao-resultados");
 
     @Test
@@ -61,5 +64,45 @@ class OutboxPublisherTest {
 
         publisher.publicarPendentes();
         verify(repository, never()).marcarPublicado(eq(evento), any(), any());
+        assertThat(registry.counter("oficina.execucao.eventos.falhas").count()).isEqualTo(1);
+        assertThat(registry.find("oficina.execucao.eventos.publicados").counter()).isNull();
+    }
+
+    @Test
+    void contaOEventoPublicadoPorTipo() {
+        when(repository.pendentes(20)).thenReturn(List.of(evento));
+        when(repository.reservar(eq(evento), any(), eq(agora), any())).thenReturn(true);
+        when(sqs.sendMessage(any(SendMessageRequest.class)))
+                .thenReturn(SendMessageResponse.builder().messageId("sqs-1").build());
+
+        publisher.publicarPendentes();
+
+        assertThat(registry.counter("oficina.execucao.eventos.publicados", "tipo", "ExecucaoAgendada").count()).isEqualTo(1);
+        assertThat(registry.counter("oficina.execucao.eventos.falhas").count()).isZero();
+    }
+
+    @Test
+    void eventoReservadoPorOutraReplicaNaoEContado() {
+        when(repository.pendentes(20)).thenReturn(List.of(evento));
+        when(repository.reservar(eq(evento), any(), eq(agora), any())).thenReturn(false);
+
+        publisher.publicarPendentes();
+
+        assertThat(registry.find("oficina.execucao.eventos.publicados").counter()).isNull();
+    }
+
+    @Test
+    void medeOAtrasoDoEventoPendenteMaisAntigo() {
+        OutboxEvent antigo = new OutboxEvent("op-1", "ExecucaoAgendada", "saga-1", "1", "c", agora.minusSeconds(90), "o", 1, "p");
+        OutboxEvent recente = new OutboxEvent("op-2", "ExecucaoAgendada", "saga-2", "2", "c", agora.minusSeconds(10), "o", 1, "p");
+        when(repository.pendentes(20)).thenReturn(List.of(recente, antigo));
+        when(repository.reservar(any(), any(), any(), any())).thenReturn(false);
+
+        publisher.publicarPendentes();
+        assertThat(registry.get("oficina.execucao.outbox.atraso").gauge().value()).isEqualTo(90);
+
+        when(repository.pendentes(20)).thenReturn(List.of());
+        publisher.publicarPendentes();
+        assertThat(registry.get("oficina.execucao.outbox.atraso").gauge().value()).isZero();
     }
 }

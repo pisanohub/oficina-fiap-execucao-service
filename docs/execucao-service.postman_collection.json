@@ -2576,8 +2576,8 @@
       ]
     },
     {
-      "name": "Health",
-      "description": "",
+      "name": "Saúde e métricas (porta de gerenciamento)",
+      "description": "O Actuator fica numa porta separada ({{managementUrl}}, padrão 8081), não exposta pelo Service principal. Em produção só é acessível dentro do cluster (Prometheus/New Relic e probes do Kubernetes).",
       "item": [
         {
           "name": "Health check",
@@ -2585,9 +2585,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/actuator/health",
+              "raw": "{{managementUrl}}/actuator/health",
               "host": [
-                "{{baseUrl}}"
+                "{{managementUrl}}"
               ],
               "path": [
                 "actuator",
@@ -2609,6 +2609,164 @@
               }
             }
           ]
+        },
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{managementUrl}}/actuator/health/liveness",
+              "host": [
+                "{{managementUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health",
+                "liveness"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{managementUrl}}/actuator/health/readiness",
+              "host": [
+                "{{managementUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health",
+                "readiness"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Métricas no formato Prometheus",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{managementUrl}}/actuator/prometheus",
+              "host": [
+                "{{managementUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "prometheus"
+              ]
+            },
+            "description": "Todas as métricas, inclusive as de negócio (oficina_execucao_*), JVM, CPU e os limites do container (oficina_container_*)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lista de métricas (Micrometer)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{managementUrl}}/actuator/metrics",
+              "host": [
+                "{{managementUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "metrics"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Uma métrica: agendamentos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{managementUrl}}/actuator/metrics/oficina.execucao.agendamentos",
+              "host": [
+                "{{managementUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "metrics",
+                "oficina.execucao.agendamentos"
+              ]
+            },
+            "description": "404 enquanto nenhum agendamento tiver sido processado."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200, 404', function () {",
+                  "    pm.expect([200, 404]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     }
@@ -2618,6 +2776,11 @@
       "key": "baseUrl",
       "value": "http://localhost:8080",
       "description": "URL do Execução Service. Local: http://localhost:8080. No cluster: http://execucao-service.oficina-ms:8080 (ClusterIP, só dentro do cluster)."
+    },
+    {
+      "key": "managementUrl",
+      "value": "http://localhost:8081",
+      "description": "URL da porta de gerenciamento (Actuator/Prometheus). No cluster: http://execucao-service-metrics.oficina-ms:8081."
     },
     {
       "key": "osId",

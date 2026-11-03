@@ -71,6 +71,7 @@ jobs:
           kubectl create configmap execucao-service-config \
             --from-literal=AWS_REGION="us-east-1" \
             --from-literal=DYNAMODB_TABLE_NAME="execucao_service" \
+            --from-literal=MANAGEMENT_SERVER_PORT="8081" \
             --from-literal=OTEL_SERVICE_NAME="execucao-service" \
             --from-literal=DEPLOYMENT_ENVIRONMENT="production" \
             --from-literal=OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="https://otlp.nr-data.net/v1/traces" \
@@ -86,6 +87,9 @@ jobs:
 
       - name: Expor aplicação
         run: kubectl apply -f k8s/service.yaml
+
+      - name: Expor métricas internamente
+        run: kubectl apply -f k8s/metrics-service.yaml
 
       - name: Aguardar rollout
         run: kubectl rollout status deployment/execucao-service -n ${{ env.NAMESPACE }}

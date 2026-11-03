@@ -18,6 +18,8 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.text.Normalizer;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -30,10 +32,12 @@ public class ExecucaoService {
 
     private final ExecucaoRepository repository;
     private final Clock clock;
+    private final ExecucaoMetricas metricas;
 
-    public ExecucaoService(ExecucaoRepository repository, Clock clock) {
+    public ExecucaoService(ExecucaoRepository repository, Clock clock, ExecucaoMetricas metricas) {
         this.repository = repository;
         this.clock = clock;
+        this.metricas = metricas;
     }
 
     public AgendamentoExecucao agendarExecucao(AgendarExecucaoCommand comando) {
@@ -41,7 +45,17 @@ public class ExecucaoService {
             throw new IllegalArgumentException("Comando é obrigatório");
         }
         validarItens(comando.payload().itens());
-        return repository.agendarExecucao(comando, clock.instant());
+        Instant agora = clock.instant();
+        try {
+            AgendamentoExecucao agendamento = repository.agendarExecucao(comando, agora);
+            if (agora.equals(agendamento.agendadoEm())) {
+                metricas.agendamentoAceito(pecasSolicitadas(comando.payload().itens()));
+            }
+            return agendamento;
+        } catch (PecaIndisponivelException rejeitada) {
+            metricas.agendamentoRejeitado();
+            throw rejeitada;
+        }
     }
 
     public void cancelarExecucao(CancelarExecucaoCommand comando) {
@@ -67,12 +81,22 @@ public class ExecucaoService {
 
     public ExecucaoTrabalho iniciarExecucao(String osId) {
         validarOsId(osId);
-        return repository.iniciarExecucao(osId.trim(), clock.instant());
+        Instant agora = clock.instant();
+        ExecucaoTrabalho execucao = repository.iniciarExecucao(osId.trim(), agora);
+        if (agora.equals(execucao.iniciadaEm()) && execucao.agendadaEm() != null) {
+            metricas.esperaNaFila(Duration.between(execucao.agendadaEm(), agora));
+        }
+        return execucao;
     }
 
     public ExecucaoTrabalho concluirExecucao(String osId) {
         validarOsId(osId);
-        return repository.concluirExecucao(osId.trim(), clock.instant());
+        Instant agora = clock.instant();
+        ExecucaoTrabalho execucao = repository.concluirExecucao(osId.trim(), agora);
+        if (agora.equals(execucao.concluidaEm()) && execucao.iniciadaEm() != null) {
+            metricas.execucaoConcluida(Duration.between(execucao.iniciadaEm(), agora));
+        }
+        return execucao;
     }
 
     public Diagnostico iniciarDiagnostico(String osId) {
@@ -141,7 +165,9 @@ public class ExecucaoService {
         if (quantidade <= 0 || quantidade > LIMITE_ESTOQUE) {
             throw new IllegalArgumentException("quantidade deve estar entre 1 e " + LIMITE_ESTOQUE);
         }
-        return repository.reporEstoque(itemId.trim(), quantidade);
+        ItemCatalogo item = repository.reporEstoque(itemId.trim(), quantidade);
+        metricas.estoqueReposto(quantidade);
+        return item;
     }
 
     public ItemCatalogo ajustarEstoque(TipoItem tipo, String itemId, Integer quantidadeEstoque) {
@@ -149,7 +175,9 @@ public class ExecucaoService {
         if (quantidadeEstoque == null || quantidadeEstoque < 0 || quantidadeEstoque > LIMITE_ESTOQUE) {
             throw new IllegalArgumentException("quantidadeEstoque deve estar entre 0 e " + LIMITE_ESTOQUE);
         }
-        return repository.ajustarEstoque(itemId.trim(), quantidadeEstoque);
+        ItemCatalogo item = repository.ajustarEstoque(itemId.trim(), quantidadeEstoque);
+        metricas.estoqueAjustado();
+        return item;
     }
 
     public Cotacao cotar(List<ItemSolicitado> itens) {
@@ -161,6 +189,10 @@ public class ExecucaoService {
             return new ItemCotado(item.tipo(), item.itemId(), catalogo.nome(), item.quantidade(), catalogo.precoUnitario());
         }).toList();
         return new Cotacao("BRL", clock.instant(), cotados);
+    }
+
+    private int pecasSolicitadas(List<ItemSolicitado> itens) {
+        return itens.stream().filter(item -> item.tipo() == TipoItem.PECA).mapToInt(ItemSolicitado::quantidade).sum();
     }
 
     private String normalizar(String texto) {
