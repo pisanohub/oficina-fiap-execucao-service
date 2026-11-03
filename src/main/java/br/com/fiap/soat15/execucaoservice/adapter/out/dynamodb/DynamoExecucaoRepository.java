@@ -9,6 +9,7 @@ import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
 import br.com.fiap.soat15.execucaoservice.domain.model.ExecucaoTrabalho;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
+import br.com.fiap.soat15.execucaoservice.domain.model.PaginaExecucoes;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
@@ -44,6 +45,11 @@ public class DynamoExecucaoRepository implements ExecucaoRepository {
     @Override
     public List<ExecucaoTrabalho> listarExecucoes() {
         return ciclo.listarExecucoes();
+    }
+
+    @Override
+    public PaginaExecucoes listarExecucoes(int limite, String pagina) {
+        return ciclo.listarExecucoes(limite, pagina);
     }
 
     @Override

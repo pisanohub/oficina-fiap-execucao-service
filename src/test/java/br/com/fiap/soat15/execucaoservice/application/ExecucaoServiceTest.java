@@ -8,6 +8,7 @@ import br.com.fiap.soat15.execucaoservice.domain.model.AtualizacaoItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
+import br.com.fiap.soat15.execucaoservice.domain.model.PaginaExecucoes;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -261,10 +262,20 @@ class ExecucaoServiceTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void paginaDaFilaDeTrabalhoExigeLimiteEntre1E100() {
+        assertThat(service.listarExecucoes(1, "abc").proximaPagina()).isEqualTo("abc");
+        assertThat(service.listarExecucoes(100, null).itens()).isEmpty();
+        assertThatThrownBy(() -> service.listarExecucoes(0, null)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("limite");
+        assertThatThrownBy(() -> service.listarExecucoes(101, null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static class RepositorioEmMemoria implements ExecucaoRepository {
         public void cancelarExecucao(CancelarExecucaoCommand comando, Instant agora) { throw new UnsupportedOperationException(); }
         public ExecucaoTrabalho concluirExecucao(String osId, Instant agora) { throw new UnsupportedOperationException(); }
         public List<ExecucaoTrabalho> listarExecucoes() { throw new UnsupportedOperationException(); }
+        public PaginaExecucoes listarExecucoes(int limite, String pagina) { return new PaginaExecucoes(List.of(), pagina); }
         public Optional<ExecucaoTrabalho> buscarExecucao(String osId) { throw new UnsupportedOperationException(); }
         public ExecucaoTrabalho iniciarExecucao(String osId, Instant agora) { throw new UnsupportedOperationException(); }
         private final Map<String, Diagnostico> diagnosticos = new HashMap<>();

@@ -441,7 +441,7 @@ Regras: de 1 a 20 itens, sem repetir `tipo`+`itemId`. A cotação **não** cria 
 | `PUT /api/v1/catalogo/PECA/{itemId}/estoque` | Definir o estoque (ajuste) |
 | `POST /api/v1/diagnosticos/{osId}/inicio` | Iniciar o diagnóstico |
 | `PUT /api/v1/diagnosticos/{osId}/itens` | Substituir os itens (com `versaoEsperada`) |
-| `GET /api/v1/execucoes` e `GET /api/v1/execucoes/{osId}` | Ver a fila de trabalho |
+| `GET /api/v1/execucoes` e `GET /api/v1/execucoes/{osId}` | Ver a fila de trabalho. A lista aceita `?limite=` (1 a 100) e `?pagina=`; o token da próxima página (opaco, não é um número) vem no cabeçalho `X-Proxima-Pagina` |
 | `POST /api/v1/execucoes/{osId}/inicio` | Iniciar o trabalho (gera `ExecucaoIniciada`) |
 | `POST /api/v1/execucoes/{osId}/conclusao` | Concluir o trabalho (gera `ExecucaoConcluida`) |
 

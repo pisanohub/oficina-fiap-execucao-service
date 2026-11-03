@@ -97,7 +97,7 @@ A suíte automatizada é executada com `./mvnw clean verify`. O fluxo foi exerci
 
 ## Limitações e decisões pendentes
 
-- Consulta da fila de trabalho e busca da outbox fazem `Scan` na tabela. A listagem HTTP ainda não oferece paginação; índice e paginação devem ser avaliados para maior volume.
+- Consulta da fila de trabalho e busca da outbox fazem `Scan` na tabela. A listagem de execuções aceita paginação opcional (`limite` e `pagina`); o índice secundário foi avaliado (ver [funcionamento-do-servico.md](funcionamento-do-servico.md)) e fica para quando o volume crescer.
 - O consumidor e o publicador são desabilitados por padrão e dependem de URLs e permissões configuradas no ambiente.
 - A sincronização do status da OS, os contratos de mensagens e os nomes das filas precisam de validação conjunta.
 - A ordem do cancelamento e do estorno, e a resposta para cancelamento sem execução existente, permanecem para acordo com o grupo.

@@ -4,6 +4,7 @@ import br.com.fiap.soat15.execucaoservice.contract.CancelarExecucaoCommand;
 import br.com.fiap.soat15.execucaoservice.domain.model.ExecucaoTrabalho;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
 import br.com.fiap.soat15.execucaoservice.domain.model.MotivoResultadoExecucao;
+import br.com.fiap.soat15.execucaoservice.domain.model.PaginaExecucoes;
 import br.com.fiap.soat15.execucaoservice.domain.model.StatusExecucao;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoEventoExecucao;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
@@ -18,6 +19,7 @@ import software.amazon.awssdk.services.dynamodb.model.Update;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -105,6 +107,51 @@ final class DynamoCicloExecucaoRepository extends DynamoRepositorySupport {
             cursor = pagina.lastEvaluatedKey();
         } while (cursor != null && !cursor.isEmpty());
         return resultado;
+    }
+
+    public PaginaExecucoes listarExecucoes(int limite, String pagina) {
+        Map<String, AttributeValue> chave = decodificarPagina(pagina);
+        List<Map<String, AttributeValue>> itens = new ArrayList<>();
+        do {
+            var request = ScanRequest.builder().tableName(tableName)
+                    .filterExpression("begins_with(pk, :prefixo) AND sk = :sk")
+                    .expressionAttributeValues(Map.of(":prefixo", texto(DynamoKeys.PREFIXO_OS), ":sk", texto(DynamoKeys.EXECUCAO)));
+            if (!chave.isEmpty()) request.exclusiveStartKey(chave);
+            var resposta = dynamo.scan(request.build());
+            itens.addAll(resposta.items());
+            chave = resposta.lastEvaluatedKey() == null ? Map.of() : resposta.lastEvaluatedKey();
+        } while (itens.size() < limite && !chave.isEmpty());
+        String proximo = chave.isEmpty() ? null : codificarPagina(chave);
+        if (itens.size() > limite) {
+            // O Scan seguinte recomeça logo depois do último item devolvido.
+            proximo = codificarPagina(chaveDoItem(itens.get(limite - 1)));
+            itens = itens.subList(0, limite);
+        }
+        return new PaginaExecucoes(itens.stream().map(this::mapearExecucao).toList(), proximo);
+    }
+
+    private Map<String, AttributeValue> chaveDoItem(Map<String, AttributeValue> item) {
+        return Map.of(DynamoKeys.PK, item.get(DynamoKeys.PK), DynamoKeys.SK, item.get(DynamoKeys.SK));
+    }
+
+    private String codificarPagina(Map<String, AttributeValue> chave) {
+        String valor = chave.get(DynamoKeys.PK).s() + "\n" + chave.get(DynamoKeys.SK).s();
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(valor.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private Map<String, AttributeValue> decodificarPagina(String pagina) {
+        if (pagina == null || pagina.isBlank()) {
+            return Map.of();
+        }
+        try {
+            String[] partes = new String(Base64.getUrlDecoder().decode(pagina), StandardCharsets.UTF_8).split("\n", -1);
+            if (partes.length != 2 || !partes[0].startsWith(DynamoKeys.PREFIXO_OS) || !DynamoKeys.EXECUCAO.equals(partes[1])) {
+                throw new IllegalArgumentException("pagina inválida");
+            }
+            return Map.of(DynamoKeys.PK, texto(partes[0]), DynamoKeys.SK, texto(partes[1]));
+        } catch (IllegalArgumentException invalido) {
+            throw new IllegalArgumentException("pagina inválida");
+        }
     }
 
     public Optional<ExecucaoTrabalho> buscarExecucao(String osId) {

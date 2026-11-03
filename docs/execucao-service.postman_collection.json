@@ -888,6 +888,72 @@
           ]
         },
         {
+          "name": "Listar fila de trabalho (paginada)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/execucoes?limite=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "execucoes?limite=2"
+              ]
+            },
+            "description": "limite de 1 a 100. Se houver mais resultados, o cabeçalho X-Proxima-Pagina traz o token da próxima página (guardado em {{pagina}}; é opaco, não é um número); na última página o cabeçalho não vem. O corpo continua sendo a lista."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});",
+                  "const proximo = pm.response.headers.get('X-Proxima-Pagina');",
+                  "if (proximo) { pm.collectionVariables.set('pagina', proximo); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar fila de trabalho (próxima página)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/execucoes?limite=2&pagina={{pagina}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "execucoes?limite=2&pagina={{pagina}}"
+              ]
+            },
+            "description": "Rode depois da requisição anterior. Repita até o cabeçalho X-Proxima-Pagina deixar de vir."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 200', function () {",
+                  "    pm.expect([200]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Consultar execução",
           "request": {
             "method": "GET",
@@ -2042,6 +2108,70 @@
           ]
         },
         {
+          "name": "Listar execuções com limite inválido (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/execucoes?limite=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "execucoes?limite=0"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 400', function () {",
+                  "    pm.expect([400]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar execuções com pagina sem limite (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/execucoes?pagina=abc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "execucoes?pagina=abc"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status esperado: 400', function () {",
+                  "    pm.expect([400]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Iniciar execução inexistente (404)",
           "request": {
             "method": "POST",
@@ -2523,6 +2653,11 @@
       "key": "pecaDescartavelId",
       "value": "peca-descartavel",
       "description": "Peça usada só para demonstrar a inativação (DELETE)."
+    },
+    {
+      "key": "pagina",
+      "value": "",
+      "description": "Preenchida automaticamente pela listagem paginada da fila de trabalho."
     },
     {
       "key": "diagVersao",
