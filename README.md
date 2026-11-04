@@ -93,15 +93,9 @@ docker run -d --name sonarqube -p 9000:9000 sonarqube:community
 ./mvnw sonar:sonar -Dsonar.host.url=http://localhost:9000 -Dsonar.token=SEU_TOKEN -Dsonar.qualitygate.wait=true
 ```
 
-No CI (`.github/workflows/ci.yml`), depois do build e dos testes, a análise roda quando o secret `SONAR_TOKEN` existe e **o job falha se o quality gate falhar**. Configuração no GitHub (Settings > Secrets and variables > Actions):
+No CI (`.github/workflows/ci.yml`), a mesma etapa roda os testes, a trava de cobertura do JaCoCo e a análise do Sonar (`verify` + `sonar:sonar`, no mesmo padrão do OS Service e do Billing). O `-Dsonar.qualitygate.wait=true` faz o job **falhar se o quality gate do Sonar reprovar**, e a regra do JaCoCo faz falhar se a cobertura de linhas ficar abaixo de 80%.
 
-| Nome | Tipo | Para quê |
-| --- | --- | --- |
-| `SONAR_TOKEN` | secret | Token de análise. Sem ele, o CI só emite um aviso |
-| `SONAR_HOST_URL` | variável | Endereço do SonarQube. Se vazio, usa `https://sonarcloud.io` |
-| `SONAR_PROJECT_KEY` | variável | Chave do projeto no Sonar (no SonarCloud, normalmente `<organização>_<repositório>`) |
-| `SONAR_ORGANIZATION` | variável | Chave da organização. **Obrigatória no SonarCloud**: sem ela o scanner falha com "You must define the following mandatory properties: sonar.organization" |
-| `SONAR_REQUIRED` | variável | Com `true`, o CI falha quando não há `SONAR_TOKEN`, em vez de apenas avisar |
+A configuração fica no próprio repositório: a organização (`sonar.organization`) e o servidor (SonarCloud) no `pom.xml`, e a chave do projeto no comando do `ci.yml`. O **único** item externo é o secret `SONAR_TOKEN` do repositório (Settings > Secrets and variables > Actions). Sem ele, a etapa do Sonar falha.
 
 Para o Sonar e a cobertura **barrarem o merge**, o check `build-test` precisa ser marcado como obrigatório na proteção da branch `main`.
 

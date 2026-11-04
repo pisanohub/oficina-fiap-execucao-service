@@ -19,7 +19,8 @@
 		<java.version>21</java.version>
 		<awssdk.version>2.46.7</awssdk.version>
 		<jacoco.minimum.coverage>0.80</jacoco.minimum.coverage>
-		<sonar.projectKey>oficina-fiap-execucao-service</sonar.projectKey>
+		<sonar.organization>pisanohub</sonar.organization>
+		<sonar.projectKey>pisanohub_oficina-fiap-execucao-service</sonar.projectKey>
 		<sonar.projectName>Oficina FIAP - Execucao Service</sonar.projectName>
 		<sonar.host.url>https://sonarcloud.io</sonar.host.url>
 		<sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
