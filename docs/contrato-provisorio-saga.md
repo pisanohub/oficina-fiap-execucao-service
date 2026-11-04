@@ -85,7 +85,7 @@ São filas SQS **Standard** (não FIFO): não têm ordem garantida e não usam `
 | `execucao-resultados` | **Execução** | **OS Service** | Eventos de resultado |
 | `execucao-resultados-dlq` | SQS (automático) | Operação/suporte | Eventos que o OS não conseguiu processar |
 
-Configuração prevista no Terraform: visibilidade 60 s, long polling de 10 s, `maxReceiveCount = 3` (após 3 recebimentos sem confirmação a mensagem vai para a DLQ) e retenção de 14 dias nas DLQs. A URL de cada fila vem do ambiente (peça ao Pedro); o OS usa a URL de `execucao-comandos` para enviar e a de `execucao-resultados` para ler.
+Configuração aplicada pela infraestrutura: visibilidade de 30 s e `maxReceiveCount = 5` (após 5 recebimentos sem confirmação a mensagem vai para a DLQ). As filas ficam na conta do grupo, em `us-east-1`, e a URL de cada uma segue o formato `https://sqs.us-east-1.amazonaws.com/<conta>/<nome-da-fila>`; o OS usa a URL de `execucao-comandos` para enviar e a de `execucao-resultados` para ler.
 
 ### Como enviar
 
@@ -201,7 +201,7 @@ Tudo em **uma única transação** (ou acontece tudo, ou nada):
 
 ### Quando **não** há resposta (a mensagem falha e vai para nova tentativa → DLQ)
 
-Estes casos são tratados como **erro** (não como rejeição de negócio) e **não geram evento**. A mensagem volta para a fila e, após 3 tentativas, vai para `execucao-comandos-dlq`:
+Estes casos são tratados como **erro** (não como rejeição de negócio) e **não geram evento**. A mensagem volta para a fila e, após 5 tentativas, vai para `execucao-comandos-dlq`:
 
 | Caso | Motivo |
 | --- | --- |
@@ -352,7 +352,7 @@ Significado dos campos do payload: `orcamentoId`, `versao` e `pagamentoId` repet
 
 1. Leia da fila `execucao-resultados` e **deduplique por `messageId`** (o mesmo evento pode chegar mais de uma vez).
 2. Não assuma ordem: `ExecucaoIniciada` pode chegar depois de `ExecucaoConcluida`. Use `iniciadaEm`/`concluidaEm` e o estado atual da Saga para decidir.
-3. Só apague a mensagem da fila depois de processar com sucesso; se falhar, deixe voltar. Após 3 recebimentos ela vai para `execucao-resultados-dlq`.
+3. Só apague a mensagem da fila depois de processar com sucesso; se falhar, deixe voltar. Após 5 recebimentos ela vai para `execucao-resultados-dlq`.
 4. Correlacione por `sagaId` e `osId`.
 
 ---
@@ -365,7 +365,7 @@ Significado dos campos do payload: `orcamentoId`, `versao` e `pagamentoId` repet
 | OS quer tentar agendar de novo depois de `ExecucaoRejeitada` | Usar **novo `operationId`** (o antigo devolve a mesma rejeição). |
 | SQS entrega o mesmo comando duas vezes | O Execução reconhece pelo `operationId` e responde uma vez. |
 | Execução publica o mesmo evento duas vezes | O OS deduplica por `messageId`. |
-| Comando malformado ou dados incoerentes | Falha; após 3 tentativas vai para `execucao-comandos-dlq`. Corrigir e reenviar com novo `messageId` (e, se os dados mudaram, novo `operationId`). |
+| Comando malformado ou dados incoerentes | Falha; após 5 tentativas vai para `execucao-comandos-dlq`. Corrigir e reenviar com novo `messageId` (e, se os dados mudaram, novo `operationId`). |
 | Cancelamento chega antes do agendamento ser processado | Execução inexistente: falha e nova tentativa (pode funcionar depois que o agendamento for processado, mas pode ir para a DLQ). |
 
 ---
@@ -485,6 +485,5 @@ Perguntas ao **Gabriel Ramos (Billing):**
 
 Perguntas à infraestrutura (**Pedro**):
 
-1. URLs finais das quatro filas e quem é dono do Terraform delas.
-2. Permissões da LabRole para os pods (DynamoDB e SQS) e como o OS acessa as filas do Execução.
-3. Como o tráfego HTTP entre OS/Billing e o Execução será roteado e autenticado (Gateway).
+1. Permissões da LabRole para os pods (DynamoDB e SQS) e como o OS acessa as filas do Execução.
+2. Como o tráfego HTTP entre OS/Billing e o Execução será roteado e autenticado (Gateway).
