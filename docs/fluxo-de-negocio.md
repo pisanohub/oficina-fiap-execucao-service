@@ -112,6 +112,8 @@ Só **peças** mexem em estoque. Itens do tipo `SERVICO` ficam registrados na ex
 
 ## 5. Cenários
 
+Os cenários A, B, C e D abaixo estão automatizados em BDD (Cucumber) no arquivo `src/test/resources/features/execucao.feature`, executados contra a aplicação real com DynamoDB Local e ElasticMQ em containers.
+
 Cada cenário abaixo foi exercitado manualmente no ambiente local (resultados na seção 7).
 
 ### Cenário A. Feliz: da OS à conclusão

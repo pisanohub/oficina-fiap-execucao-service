@@ -76,10 +76,28 @@ O JaCoCo mede a cobertura e o build (`./mvnw clean verify`) **falha se a cobertu
 
 | Medida (03/11/2026) | Valor |
 | --- | --- |
-| Testes automatizados | 126 |
-| Cobertura de linhas (JaCoCo, usada no gate) | 89,6% |
-| Cobertura de instruções (JaCoCo) | 88,8% |
-| Cobertura segundo o Sonar (linhas + branches) | 83,7% |
+| Testes automatizados (unitários + 4 cenários BDD) | 130 |
+| Cobertura de linhas (JaCoCo, usada no gate) | 93,4% |
+| Cobertura de instruções (JaCoCo) | 93,3% |
+| Cobertura segundo o Sonar (linhas + branches) | [painel no SonarCloud](https://sonarcloud.io/project/overview?id=pisanohub_oficina-fiap-execucao-service) |
+
+### Testes BDD (Cucumber)
+
+O fluxo completo do serviço está descrito em português, no formato Gherkin, em [`src/test/resources/features/execucao.feature`](src/test/resources/features/execucao.feature) e é executado como teste automatizado. Os cenários cobrem:
+
+1. **Fluxo completo:** o OS Service agenda a execução, o mecânico inicia e conclui, com os eventos `ExecucaoAgendada`, `ExecucaoIniciada` e `ExecucaoConcluida` publicados.
+2. **Agendamento rejeitado** por falta de estoque (`ExecucaoRejeitada`, sem execução criada e sem mexer no estoque).
+3. **Cancelamento antes do início**, que devolve as peças ao estoque (`ExecucaoCancelada`).
+4. **Cancelamento recusado** depois que o trabalho começou (`CancelamentoExecucaoRecusado`).
+
+Os passos (`src/test/java/.../bdd`) não usam dublês: o teste sobe o **DynamoDB Local e o ElasticMQ em containers** (Testcontainers), inicia a aplicação inteira com o consumidor e o publicador ligados e conversa com ela como o OS Service e o mecânico fariam, por mensagens no SQS e chamadas HTTP.
+
+```bash
+./mvnw test -Dtest=CucumberTest        # só o BDD
+./mvnw clean verify                    # tudo (inclui o BDD)
+```
+
+Requer **Docker** em execução. Sem Docker, os cenários são ignorados na máquina local, mas **falham no CI** (variável `CI`), para não passarem em branco. O relatório fica em `target/cucumber-reports/cucumber.html`.
 
 ### Sonar
 
