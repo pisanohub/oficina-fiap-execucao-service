@@ -13,6 +13,11 @@ dynamodb:
 sqs:
   execucao-resultados-url: ${SQS_EXECUCAO_RESULTADOS_URL:}
   execucao-comandos-url: ${SQS_EXECUCAO_COMANDOS_URL:}
+  execucao-resultados-dlq-url: ${SQS_EXECUCAO_RESULTADOS_DLQ_URL:}
+  execucao-comandos-dlq-url: ${SQS_EXECUCAO_COMANDOS_DLQ_URL:}
+  metrics:
+    enabled: ${SQS_METRICS_ENABLED:false}
+    poll-delay-ms: ${SQS_METRICS_POLL_DELAY_MS:60000}
   consumer:
     enabled: ${SQS_CONSUMER_ENABLED:false}
     poll-delay-ms: ${SQS_CONSUMER_POLL_DELAY_MS:5000}
@@ -24,10 +29,20 @@ outbox:
     poll-delay-ms: ${OUTBOX_POLL_DELAY_MS:5000}
 
 management:
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:8081}
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,prometheus
   endpoint:
     health:
+      probes:
+        enabled: true
       show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true

@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: execucao-service-metrics
+  namespace: oficina-ms
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: /actuator/prometheus
+    prometheus.io/port: "8081"
+
+spec:
+  selector:
+    app: execucao-service
+
+  ports:
+    - name: management
+      port: 8081
+      targetPort: 8081
+
+  type: ClusterIP

@@ -31,6 +31,8 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+            - containerPort: 8081
+              name: management
 
           envFrom:
 
@@ -50,7 +52,7 @@ spec:
 
             httpGet:
               path: /actuator/health/readiness
-              port: 8080
+              port: 8081
 
             initialDelaySeconds: 60
             periodSeconds: 30
@@ -59,7 +61,7 @@ spec:
 
             httpGet:
               path: /actuator/health/liveness
-              port: 8080
+              port: 8081
 
             initialDelaySeconds: 90
             periodSeconds: 30

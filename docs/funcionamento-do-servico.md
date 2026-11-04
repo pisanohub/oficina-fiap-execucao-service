@@ -129,8 +129,8 @@ Não existe rota HTTP para criar ou cancelar execução: isso só acontece por m
 
 ### Outros
 
-- `GET /actuator/health` e `GET /actuator/info` (únicos endpoints do Actuator expostos; `show-details: always`).
-- O Kubernetes usa `/actuator/health/readiness` e `/actuator/health/liveness` nas probes.
+- O Actuator fica na **porta de gerenciamento 8081** (`MANAGEMENT_SERVER_PORT`), separada da API: `GET :8081/actuator/health`, `/actuator/info`, `/actuator/metrics` e `/actuator/prometheus`.
+- O Kubernetes usa `:8081/actuator/health/readiness` e `/actuator/health/liveness` nas probes. As métricas estão descritas em [observabilidade.md](observabilidade.md).
 
 ## 4. Como o serviço **consome** mensagens (SQS)
 
@@ -302,6 +302,8 @@ Arquivo `src/main/resources/application.yaml`, tudo por variável de ambiente:
 | `SQS_CONSUMER_ENABLED` | `false` | Liga o consumidor |
 | `SQS_CONSUMER_POLL_DELAY_MS` | `5000` | Intervalo do consumidor |
 | `SQS_CONSUMER_MAX_MESSAGES` | `10` | Mensagens lidas por vez (1 a 10) |
+| `MANAGEMENT_SERVER_PORT` | `8081` | Porta do Actuator e do Prometheus |
+| `SQS_METRICS_ENABLED` | `false` | Liga as métricas de filas e DLQs (ver [observabilidade.md](observabilidade.md)) |
 | `OUTBOX_PUBLISHER_ENABLED` | `false` | Liga o publicador |
 | `OUTBOX_POLL_DELAY_MS` | `5000` | Intervalo do publicador |
 
@@ -311,7 +313,7 @@ Consumidor e publicador vêm **desligados por padrão**. Habilitar não cria fil
 
 ```bash
 ./mvnw clean verify          # build + testes + JaCoCo
-./mvnw spring-boot:run       # sobe na porta 8080
+./mvnw spring-boot:run       # API na porta 8080, Actuator na 8081
 ```
 
 Para exercitar o fluxo completo, suba DynamoDB local e SQS local (ex.: ElasticMQ), crie a tabela (`pk`/`sk`) e as filas, e exporte os endpoints, as URLs das filas e as flags `SQS_CONSUMER_ENABLED=true` e `OUTBOX_PUBLISHER_ENABLED=true`. Credenciais AWS fictícias bastam localmente.

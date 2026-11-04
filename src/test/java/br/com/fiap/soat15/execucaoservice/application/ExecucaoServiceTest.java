@@ -10,6 +10,7 @@ import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
 import br.com.fiap.soat15.execucaoservice.domain.model.PaginaExecucoes;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -28,12 +29,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ExecucaoServiceTest {
     private RepositorioEmMemoria repository;
     private ExecucaoService service;
+    private SimpleMeterRegistry registry;
     private final Instant agora = Instant.parse("2026-11-02T14:00:00Z");
 
     @BeforeEach
     void preparar() {
         repository = new RepositorioEmMemoria();
-        service = new ExecucaoService(repository, Clock.fixed(agora, ZoneOffset.UTC));
+        registry = new SimpleMeterRegistry();
+        service = new ExecucaoService(repository, Clock.fixed(agora, ZoneOffset.UTC), new ExecucaoMetricas(registry));
     }
 
     @Test
@@ -271,15 +274,96 @@ class ExecucaoServiceTest {
         assertThatThrownBy(() -> service.listarExecucoes(101, null)).isInstanceOf(IllegalArgumentException.class);
     }
 
+    private AgendarExecucaoCommand comandoComItens(List<ItemSolicitado> itens) {
+        return new AgendarExecucaoCommand(1, "02539ee2-c754-4bb7-b178-4b328de9dbd5", "op-1", "AgendarExecucao",
+                "saga-1", "os-1", "causa-1", "2026-11-02T14:00:00Z",
+                new AgendarExecucaoCommand.Payload("orc-1", 1, "pag-1", itens));
+    }
+
+    @Test
+    void contaAgendamentoAceitoEAsPecasReservadasSemContarServicos() {
+        service.agendarExecucao(comandoComItens(List.of(new ItemSolicitado(TipoItem.SERVICO, "troca", 1),
+                new ItemSolicitado(TipoItem.PECA, "filtro", 2), new ItemSolicitado(TipoItem.PECA, "pastilha", 3))));
+        assertThat(registry.counter("oficina.execucao.agendamentos", "resultado", "agendada").count()).isEqualTo(1);
+        assertThat(registry.counter("oficina.execucao.pecas.reservadas").count()).isEqualTo(5);
+    }
+
+    @Test
+    void reenvioDoMesmoAgendamentoNaoContaDeNovo() {
+        repository.agendamentoAnterior = new AgendamentoExecucao("os-1", "op-1", "saga-1", "orc-1", 1, "pag-1",
+                agora.minusSeconds(60));
+        service.agendarExecucao(comandoComItens(List.of(new ItemSolicitado(TipoItem.PECA, "filtro", 2))));
+        assertThat(registry.find("oficina.execucao.agendamentos").counter()).isNull();
+        assertThat(registry.find("oficina.execucao.pecas.reservadas").counter()).isNull();
+    }
+
+    @Test
+    void contaAgendamentoRejeitadoPorEstoque() {
+        repository.rejeitarAgendamento = true;
+        assertThatThrownBy(() -> service.agendarExecucao(comandoComItens(List.of(new ItemSolicitado(TipoItem.PECA, "filtro", 2)))))
+                .isInstanceOf(PecaIndisponivelException.class);
+        assertThat(registry.counter("oficina.execucao.agendamentos", "resultado", "rejeitada").count()).isEqualTo(1);
+        assertThat(registry.find("oficina.execucao.agendamentos").tag("resultado", "agendada").counter()).isNull();
+    }
+
+    @Test
+    void medeAEsperaNaFilaApenasQuandoAExecucaoComecaAgora() {
+        repository.execucaoDevolvida = new ExecucaoTrabalho("1", "EM_EXECUCAO", "saga-1", List.of(),
+                agora.minusSeconds(600), agora, null);
+        service.iniciarExecucao("1");
+        var espera = registry.get("oficina.execucao.fila.espera").timer();
+        assertThat(espera.count()).isEqualTo(1);
+        assertThat(espera.totalTime(java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(600);
+
+        repository.execucaoDevolvida = new ExecucaoTrabalho("1", "EM_EXECUCAO", "saga-1", List.of(),
+                agora.minusSeconds(600), agora.minusSeconds(30), null);
+        service.iniciarExecucao("1");
+        assertThat(registry.get("oficina.execucao.fila.espera").timer().count()).isEqualTo(1);
+    }
+
+    @Test
+    void medeADuracaoDaExecucaoApenasNaPrimeiraConclusao() {
+        repository.execucaoDevolvida = new ExecucaoTrabalho("1", "CONCLUIDA", "saga-1", List.of(),
+                agora.minusSeconds(7200), agora.minusSeconds(1800), agora);
+        service.concluirExecucao("1");
+        var duracao = registry.get("oficina.execucao.duracao").timer();
+        assertThat(duracao.count()).isEqualTo(1);
+        assertThat(duracao.totalTime(java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(1800);
+
+        repository.execucaoDevolvida = new ExecucaoTrabalho("1", "CONCLUIDA", "saga-1", List.of(),
+                agora.minusSeconds(7200), agora.minusSeconds(1800), agora.minusSeconds(10));
+        service.concluirExecucao("1");
+        assertThat(registry.get("oficina.execucao.duracao").timer().count()).isEqualTo(1);
+    }
+
+    @Test
+    void contaReposicaoEAjusteDeEstoque() {
+        service.salvarItemCatalogo(new ItemCatalogo(TipoItem.PECA, "filtro", "Filtro", new BigDecimal("25.00"), true, 3));
+        service.reporEstoque(TipoItem.PECA, "filtro", 7);
+        service.reporEstoque(TipoItem.PECA, "filtro", 3);
+        service.ajustarEstoque(TipoItem.PECA, "filtro", 0);
+        assertThat(registry.counter("oficina.execucao.estoque.reposto").count()).isEqualTo(10);
+        assertThat(registry.counter("oficina.execucao.estoque.ajustes").count()).isEqualTo(1);
+    }
+
+    @Test
+    void reposicaoInvalidaNaoConta() {
+        assertThatThrownBy(() -> service.reporEstoque(TipoItem.PECA, "filtro", 0)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(registry.find("oficina.execucao.estoque.reposto").counter()).isNull();
+    }
+
     private static class RepositorioEmMemoria implements ExecucaoRepository {
         public void cancelarExecucao(CancelarExecucaoCommand comando, Instant agora) { throw new UnsupportedOperationException(); }
-        public ExecucaoTrabalho concluirExecucao(String osId, Instant agora) { throw new UnsupportedOperationException(); }
+        private ExecucaoTrabalho execucaoDevolvida;
+        private boolean rejeitarAgendamento;
+        public ExecucaoTrabalho concluirExecucao(String osId, Instant agora) { return execucaoDevolvida; }
         public List<ExecucaoTrabalho> listarExecucoes() { throw new UnsupportedOperationException(); }
         public PaginaExecucoes listarExecucoes(int limite, String pagina) { return new PaginaExecucoes(List.of(), pagina); }
         public Optional<ExecucaoTrabalho> buscarExecucao(String osId) { throw new UnsupportedOperationException(); }
-        public ExecucaoTrabalho iniciarExecucao(String osId, Instant agora) { throw new UnsupportedOperationException(); }
+        public ExecucaoTrabalho iniciarExecucao(String osId, Instant agora) { return execucaoDevolvida; }
         private final Map<String, Diagnostico> diagnosticos = new HashMap<>();
         private final Map<String, ItemCatalogo> catalogo = new HashMap<>();
+        private AgendamentoExecucao agendamentoAnterior;
         private AgendarExecucaoCommand comandoAgendado;
         private Instant instanteAgendamento;
 
@@ -287,6 +371,8 @@ class ExecucaoServiceTest {
         public AgendamentoExecucao agendarExecucao(AgendarExecucaoCommand comando, Instant agora) {
             comandoAgendado = comando;
             instanteAgendamento = agora;
+            if (rejeitarAgendamento) throw new PecaIndisponivelException("filtro", null);
+            if (agendamentoAnterior != null) return agendamentoAnterior;
             return new AgendamentoExecucao(comando.osId(), comando.operationId(), comando.sagaId(),
                     comando.payload().orcamentoId(), comando.payload().versao(),
                     comando.payload().pagamentoId(), agora);

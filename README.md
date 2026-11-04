@@ -50,15 +50,21 @@ Variaveis de ambiente configuraveis (ver `src/main/resources/application.yaml`):
 | `SQS_CONSUMER_ENABLED` | `false` | Ativa o consumidor após configurar a fila de comandos |
 | `SQS_CONSUMER_POLL_DELAY_MS` | `5000` | Intervalo entre leituras da fila de comandos |
 | `SQS_CONSUMER_MAX_MESSAGES` | `10` | Mensagens lidas por vez da fila de comandos (1 a 10) |
+| `MANAGEMENT_SERVER_PORT` | `8081` | Porta do Actuator (health e métricas Prometheus) |
+| `SQS_METRICS_ENABLED` | `false` | Liga as métricas de quantidade de mensagens nas filas e DLQs |
+| `SQS_METRICS_POLL_DELAY_MS` | `60000` | Intervalo entre as consultas de métricas ao SQS |
+| `SQS_EXECUCAO_COMANDOS_DLQ_URL` | vazio | URL da DLQ de comandos (só para métricas) |
+| `SQS_EXECUCAO_RESULTADOS_DLQ_URL` | vazio | URL da DLQ de resultados (só para métricas) |
 | `OUTBOX_PUBLISHER_ENABLED` | `false` | Ativa o publicador após configurar a fila |
 | `OUTBOX_POLL_DELAY_MS` | `5000` | Intervalo entre buscas na outbox |
 
-Health check: `GET /actuator/health`.
+Health check: `GET :8081/actuator/health`. Métricas Prometheus: `GET :8081/actuator/prometheus` (detalhes em [observabilidade](docs/observabilidade.md)).
 
 ## Contratos
 
 - [Fluxo de negócio: quem chama o quê e o que muda cada status](docs/fluxo-de-negocio.md)
 - [Como o serviço funciona: endpoints, consumo e publicação de mensagens](docs/funcionamento-do-servico.md)
+- [Observabilidade: métricas de negócio, pod, CPU e limites](docs/observabilidade.md)
 - [Collection do Postman com o fluxo completo](docs/execucao-service.postman_collection.json)- [Arquitetura do Execução Service e configuração das DLQs](docs/arquitetura-execucao.md)
 - [Guia de integração para OS Service e Billing: filas, mensagens, campos e HTTP](docs/contrato-provisorio-saga.md)
 

@@ -85,7 +85,7 @@ A outbox é um registro de eventos no DynamoDB. Um publicador procura eventos pe
 
 ## HTTP e acesso
 
-As rotas usam o prefixo `/api/v1` para catálogo, diagnóstico, cotação e fila de trabalho. Elas estão listadas no contrato, com exemplos de requisição e resposta. O serviço oferece também `GET /actuator/health`.
+As rotas usam o prefixo `/api/v1` para catálogo, diagnóstico, cotação e fila de trabalho. Elas estão listadas no contrato, com exemplos de requisição e resposta. O Actuator (`/actuator/health` e `/actuator/prometheus`) fica na porta de gerenciamento 8081, separada da API; as métricas estão em [observabilidade.md](observabilidade.md).
 
 A autenticação e a autorização de operadores e serviços ainda precisam ser implementadas e alinhadas com o Gateway e a solução de autenticação do grupo. O prefixo da rota, por si só, não aplica controle de acesso.
 

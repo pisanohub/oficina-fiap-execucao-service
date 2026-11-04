@@ -1,8 +1,10 @@
 package br.com.fiap.soat15.execucaoservice.adapter.in.sqs;
 
 import br.com.fiap.soat15.execucaoservice.application.ExecucaoJaAgendadaException;
+import br.com.fiap.soat15.execucaoservice.application.ExecucaoMetricas;
 import br.com.fiap.soat15.execucaoservice.application.ExecucaoService;
 import br.com.fiap.soat15.execucaoservice.application.PecaIndisponivelException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import software.amazon.awssdk.services.sqs.SqsClient;
@@ -30,7 +32,9 @@ class AgendarExecucaoConsumerTest {
 
     private final SqsClient sqs = mock(SqsClient.class);
     private final ExecucaoService service = mock(ExecucaoService.class);
-    private final AgendarExecucaoConsumer consumer = new AgendarExecucaoConsumer(sqs, service, "queue");
+    private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    private final ExecucaoMetricas metricas = new ExecucaoMetricas(registry);
+    private final AgendarExecucaoConsumer consumer = new AgendarExecucaoConsumer(sqs, service, metricas, "queue");
 
     private static Message mensagem(String id, String body) {
         return Message.builder().messageId(id).receiptHandle("receipt-" + id).body(body).build();
@@ -130,7 +134,7 @@ class AgendarExecucaoConsumerTest {
     @Test
     void pedeAoSqsAQuantidadeConfiguradaDeMensagens() {
         recebe();
-        new AgendarExecucaoConsumer(sqs, service, "queue", 3).consumir();
+        new AgendarExecucaoConsumer(sqs, service, metricas, "queue", 3).consumir();
         consumer.consumir();
         ArgumentCaptor<ReceiveMessageRequest> captor = ArgumentCaptor.forClass(ReceiveMessageRequest.class);
         verify(sqs, times(2)).receiveMessage(captor.capture());
@@ -140,8 +144,38 @@ class AgendarExecucaoConsumerTest {
 
     @Test
     void rejeitaConfiguracaoInvalida() {
-        assertThatThrownBy(() -> new AgendarExecucaoConsumer(sqs, service, " ", 10)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new AgendarExecucaoConsumer(sqs, service, "queue", 0)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new AgendarExecucaoConsumer(sqs, service, "queue", 11)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AgendarExecucaoConsumer(sqs, service, metricas, " ", 10)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AgendarExecucaoConsumer(sqs, service, metricas, "queue", 0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AgendarExecucaoConsumer(sqs, service, metricas, "queue", 11)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void contaComandosProcessadosPorTipo() {
+        recebe(mensagem("a", AGENDAR), mensagem("c", CANCELAR));
+        consumer.consumir();
+        assertThat(registry.counter("oficina.execucao.comandos.processados", "tipo", "AgendarExecucao").count()).isEqualTo(1);
+        assertThat(registry.counter("oficina.execucao.comandos.processados", "tipo", "CancelarExecucao").count()).isEqualTo(1);
+        assertThat(registry.get("oficina.execucao.comandos.duracao").tag("tipo", "AgendarExecucao").timer().count()).isEqualTo(1);
+    }
+
+    @Test
+    void pecaIndisponivelContaComoComandoProcessado() {
+        recebe(mensagem("a", AGENDAR));
+        doThrow(new PecaIndisponivelException("filtro", null)).when(service).agendarExecucao(any());
+        consumer.consumir();
+        assertThat(registry.counter("oficina.execucao.comandos.processados", "tipo", "AgendarExecucao").count()).isEqualTo(1);
+        assertThat(registry.find("oficina.execucao.comandos.falhas").counter()).isNull();
+    }
+
+    @Test
+    void contaFalhasPermanentesETransitoriasComOTipoDoComando() {
+        recebe(mensagem("a", AGENDAR), mensagem("c", CANCELAR), mensagem("ruim", "nao-e-json"));
+        doThrow(new IllegalArgumentException("incoerente")).when(service).agendarExecucao(any());
+        doThrow(new NoSuchElementException("sem execução")).when(service).cancelarExecucao(any());
+        consumer.consumir();
+        assertThat(registry.counter("oficina.execucao.comandos.falhas", "tipo", "AgendarExecucao", "natureza", "permanente").count()).isEqualTo(1);
+        assertThat(registry.counter("oficina.execucao.comandos.falhas", "tipo", "CancelarExecucao", "natureza", "transitoria").count()).isEqualTo(1);
+        assertThat(registry.counter("oficina.execucao.comandos.falhas", "tipo", "desconhecido", "natureza", "permanente").count()).isEqualTo(1);
+        assertThat(registry.find("oficina.execucao.comandos.processados").counter()).isNull();
     }
 }
