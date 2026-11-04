@@ -13,10 +13,6 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 
-/**
- * Expõe os limites e o uso de recursos do container lidos do cgroup (v2 ou v1). Fora de um container
- * (por exemplo, no desenvolvimento local) os medidores simplesmente não são registrados.
- */
 @Component
 public class ContainerMetricas implements MeterBinder {
     private static final long SEM_LIMITE = 1L << 60;

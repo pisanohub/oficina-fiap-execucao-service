@@ -8,7 +8,6 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** Métricas de negócio e operação do Execução Service, registradas com o prefixo {@code oficina.execucao}. */
 @Component
 public class ExecucaoMetricas {
     private final MeterRegistry registry;

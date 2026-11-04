@@ -16,10 +16,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * Acompanha a quantidade de mensagens nas filas e nas DLQs. Uma mensagem na DLQ indica uma operação
- * que não foi concluída e precisa de atenção.
- */
 @Component
 @ConditionalOnProperty(name = "sqs.metrics.enabled", havingValue = "true")
 public class FilasMetricas {
