@@ -2,9 +2,7 @@ package br.com.fiap.soat15.execucaoservice.contract;
 
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
 
-import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 
 public record AgendarExecucaoCommand(
         int schemaVersion,
@@ -20,11 +18,10 @@ public record AgendarExecucaoCommand(
     public AgendarExecucaoCommand {
         if (schemaVersion != 1 || !TipoComandoExecucao.AGENDAR.codigo().equals(type) || vazio(messageId)
                 || vazio(occurredAt)
-                || vazio(operationId) || vazio(sagaId) || vazio(osId) || payload == null) {
+                || vazio(operationId) || vazio(sagaId) || vazio(osId) || payload == null
+                || !EnvelopeValidacao.uuidValido(messageId) || !EnvelopeValidacao.instanteValido(occurredAt)) {
             throw new IllegalArgumentException("Envelope AgendarExecucao v1 inválido");
         }
-        UUID.fromString(messageId);
-        Instant.parse(occurredAt);
     }
 
     public record Payload(String orcamentoId, int versao, String pagamentoId, List<ItemSolicitado> itens) {

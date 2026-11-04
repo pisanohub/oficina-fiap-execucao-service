@@ -29,11 +29,11 @@ abstract class DynamoRepositorySupport {
     }
 
     protected Map<String, AttributeValue> chaveExecucao(String osId) {
-        return DynamoKeys.execucao(osId);
+        return DynamoKeys.chaveExecucao(osId);
     }
 
     protected Map<String, AttributeValue> chaveCatalogo(TipoItem tipo, String itemId) {
-        return DynamoKeys.catalogo(tipo, itemId);
+        return DynamoKeys.chaveCatalogo(tipo, itemId);
     }
 
     protected AttributeValue texto(String valor) {
