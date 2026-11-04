@@ -2243,7 +2243,7 @@
     },
     {
       "name": "6 - Cenários de erro (fila)",
-      "description": "Rejeição por estoque gera evento. Mensagens inválidas não geram evento: após 3 recebimentos vão para a DLQ (cerca de 2 a 3 minutos no ambiente local).",
+      "description": "Rejeição por estoque gera evento. Mensagens inválidas não geram evento: após o número de recebimentos configurado na fila (5 na AWS) vão para a DLQ.",
       "item": [
         {
           "name": "AgendarExecucao com estoque insuficiente (ExecucaoRejeitada)",
@@ -2470,7 +2470,7 @@
                 }
               ]
             },
-            "description": "Falha a cada leitura e, na terceira, é movida para execucao-comandos-dlq."
+            "description": "Falha a cada leitura e, ao esgotar os recebimentos da fila, é movida para execucao-comandos-dlq."
           },
           "event": [
             {

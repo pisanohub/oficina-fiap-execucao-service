@@ -142,9 +142,9 @@ Classe: `AgendarExecucaoConsumer`. Só é criada se `SQS_CONSUMER_ENABLED=true`;
    - `CancelarExecucao` → desserializa em `CancelarExecucaoCommand` → `ExecucaoService.cancelarExecucao`.
    - qualquer outro → `IllegalArgumentException`.
 3. Se o processamento termina sem exceção, **apaga a mensagem** da fila.
-4. Se lança `RuntimeException`, **não apaga** a mensagem, e o SQS a reentrega e, após `maxReceiveCount` (3) recebimentos, move para `execucao-comandos-dlq`. O consumidor distingue dois tipos de falha:
+4. Se lança `RuntimeException`, **não apaga** a mensagem, e o SQS a reentrega e, após `maxReceiveCount` (5) recebimentos, move para `execucao-comandos-dlq`. O consumidor distingue dois tipos de falha:
    - **Permanente** (JSON inválido, envelope que não passa na validação, `type` desconhecido, `operationId` reutilizado com dados diferentes, `sagaId` divergente, OS que já tem execução): nunca vai funcionar em nova tentativa. Registra `ERROR` e libera a mensagem na hora (`ChangeMessageVisibility` com 0), então ela chega à DLQ em segundos em vez de minutos.
-   - **Transitória** (banco indisponível, peça inativa ou ausente, execução ainda inexistente no cancelamento): registra `WARN` com o erro e espera o tempo de visibilidade da fila (60 s no Terraform), porque uma nova tentativa pode dar certo.
+   - **Transitória** (banco indisponível, peça inativa ou ausente, execução ainda inexistente no cancelamento): registra `WARN` com o erro e espera o tempo de visibilidade da fila (30 s na fila criada pela infraestrutura), porque uma nova tentativa pode dar certo.
 5. Exceção: `PecaIndisponivelException` no agendamento é tratada como resultado de negócio. O consumidor loga e apaga a mensagem, porque a rejeição já foi gravada na outbox.
 
 ### Envelope dos comandos (validado no construtor do record)
@@ -307,7 +307,7 @@ Arquivo `src/main/resources/application.yaml`, tudo por variável de ambiente:
 | `OUTBOX_PUBLISHER_ENABLED` | `false` | Liga o publicador |
 | `OUTBOX_POLL_DELAY_MS` | `5000` | Intervalo do publicador |
 
-Consumidor e publicador vêm **desligados por padrão**. Habilitar não cria filas nem tabela: os recursos precisam existir (Terraform em `terraform/`).
+Consumidor e publicador vêm **desligados por padrão**. Habilitar não cria filas nem tabela: os recursos precisam existir (a tabela e as filas já foram criadas pelo Pedro).
 
 ### Rodando localmente
 
@@ -334,7 +334,7 @@ Para criar a execução é preciso enviar um `AgendarExecucao` na fila `execucao
 
 ## 10. Infraestrutura, CI/CD e testes
 
-- **Terraform** (`terraform/`): tabela `execucao_service` e as filas `execucao-comandos` e `execucao-resultados` com DLQs (retenção de 14 dias, visibilidade 60 s, long polling 10 s, `sqs_max_receive_count = 3`). Os outputs expõem as URLs. Antes de aplicar, confirmar com o Pedro quem é dono do estado dessas filas.
+- **Terraform** (`terraform/`): definição da tabela `execucao_service`. As filas `execucao-comandos` e `execucao-resultados`, com suas DLQs (visibilidade 30 s, `maxReceiveCount = 5`), pertencem ao repositório de infraestrutura (`oficina-fiap-infra-k8s`) e já existem na AWS.
 - **CI** (`ci.yml`): `./mvnw clean verify` em push/PR para `main`. **Terraform** (`terraform-check.yml`): `fmt`, `init` e `validate` quando `terraform/**` muda.
 - **CD** (`deploy.yml`): em push na `main`, builda a imagem (Dockerfile multi-stage Maven → JDK 21 Alpine), publica em `ghcr.io` e aplica no Kubernetes (`namespace oficina-ms`, 1 réplica, Service `ClusterIP` na porta 8080, probes de readiness/liveness no Actuator).
 - **Testes** (`src/test`): consumer, repositórios DynamoDB e outbox, publisher, `ExecucaoService` e validação do contrato `AgendarExecucaoCommand`.

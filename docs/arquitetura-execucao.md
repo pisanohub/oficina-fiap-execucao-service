@@ -104,10 +104,10 @@ A suíte automatizada é executada com `./mvnw clean verify`. O fluxo foi exerci
 - Cancelamento após início do trabalho e tratamento de peças já utilizadas não fazem parte da regra atual.
 - A integração de infraestrutura, as políticas de acesso e o deploy precisam ser verificados no ambiente compartilhado.
 
-## Filas e DLQs definidas em Terraform
+## Filas e DLQs
 
-A branch de infraestrutura define `execucao-comandos` e `execucao-resultados`, cada uma associada à sua DLQ (`execucao-comandos-dlq` e `execucao-resultados-dlq`). A política encaminha mensagens não confirmadas após o número de recebimentos configurado por `sqs_max_receive_count`, inicialmente `3`. As DLQs retêm mensagens por até 14 dias; as filas principais usam visibilidade de 60 segundos e espera longa de 10 segundos. Esses valores são provisórios e devem ser alinhados com o grupo. A DLQ de resultados recebe falhas do consumidor OS Service, não falhas de publicação pelo Execução Service.
+As quatro filas (`execucao-comandos`, `execucao-comandos-dlq`, `execucao-resultados` e `execucao-resultados-dlq`) foram criadas pelo Pedro na conta e região do grupo (`us-east-1`) e pertencem ao repositório de infraestrutura `oficina-fiap-infra-k8s`. Este repositório **não** define filas em Terraform, para que um único estado seja dono de cada recurso. A configuração aplicada pela infraestrutura é visibilidade de 30 segundos e `maxReceiveCount = 5`: uma mensagem não confirmada vai para a DLQ após 5 recebimentos. Os demais parâmetros (retenção das DLQs, espera longa) devem ser consultados no repositório de infraestrutura. A DLQ de resultados recebe falhas do consumidor OS Service, não falhas de publicação pelo Execução Service.
 
-O Terraform fornece as URLs das filas como outputs. Configure `SQS_EXECUCAO_COMANDOS_URL` e `SQS_EXECUCAO_RESULTADOS_URL` com as URLs das filas principais e habilite os componentes correspondentes. A definição em código não significa que os recursos já tenham sido criados na AWS. Antes de aplicar, confirme com Pedro qual repositório e estado Terraform são donos das filas e se elas já existem; recursos existentes devem ser gerenciados pelo estado responsável para evitar duplicação ou conflito.
+Configure `SQS_EXECUCAO_COMANDOS_URL` e `SQS_EXECUCAO_RESULTADOS_URL` com as URLs das filas principais (formato `https://sqs.us-east-1.amazonaws.com/<conta>/<nome-da-fila>`) e habilite os componentes correspondentes.
 
-No teste local com ElasticMQ, uma mensagem não confirmada foi encaminhada à DLQ após três recebimentos. Esse teste verifica o comportamento de redirecionamento do emulador, e não substitui validar e aplicar o Terraform ou verificar a configuração na AWS.
+No teste local com ElasticMQ, uma mensagem não confirmada é encaminhada à DLQ após o número de recebimentos configurado no emulador. Esse teste verifica o redirecionamento, e não substitui a verificação da configuração na AWS.
