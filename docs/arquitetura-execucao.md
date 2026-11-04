@@ -1,6 +1,6 @@
 # Arquitetura do Execução Service
 
-Este documento descreve a implementação disponível nesta branch e as integrações propostas para a Fase 4. Os contratos entre serviços e a infraestrutura compartilhada ainda precisam ser validados pelo grupo. Para campos, exemplos HTTP e mensagens, consulte o [contrato provisório da Saga](contrato-provisorio-saga.md).
+Este documento descreve a implementação disponível na `main` e as integrações propostas para a Fase 4. Os contratos entre serviços e a infraestrutura compartilhada ainda precisam ser validados pelo grupo. Para campos, exemplos HTTP e mensagens, consulte o [contrato provisório da Saga](contrato-provisorio-saga.md).
 
 ## Contexto e responsabilidades
 
@@ -99,7 +99,7 @@ A suíte automatizada é executada com `./mvnw clean verify`. O fluxo foi exerci
 
 - Consulta da fila de trabalho e busca da outbox fazem `Scan` na tabela. A listagem de execuções aceita paginação opcional (`limite` e `pagina`); o índice secundário foi avaliado (ver [funcionamento-do-servico.md](funcionamento-do-servico.md)) e fica para quando o volume crescer.
 - O consumidor e o publicador são desabilitados por padrão e dependem de URLs e permissões configuradas no ambiente.
-- A sincronização do status da OS, os contratos de mensagens e os nomes das filas precisam de validação conjunta.
+- A sincronização do status da OS e os contratos de mensagens precisam de validação conjunta. As quatro filas já existem na AWS (criadas pelo Pedro).
 - A ordem do cancelamento e do estorno, e a resposta para cancelamento sem execução existente, permanecem para acordo com o grupo.
 - Cancelamento após início do trabalho e tratamento de peças já utilizadas não fazem parte da regra atual.
 - A integração de infraestrutura, as políticas de acesso e o deploy precisam ser verificados no ambiente compartilhado.

@@ -335,9 +335,9 @@ Para criar a execução é preciso enviar um `AgendarExecucao` na fila `execucao
 ## 10. Infraestrutura, CI/CD e testes
 
 - **Terraform** (`terraform/`): definição da tabela `execucao_service`. As filas `execucao-comandos` e `execucao-resultados`, com suas DLQs (visibilidade 30 s, `maxReceiveCount = 5`), pertencem ao repositório de infraestrutura (`oficina-fiap-infra-k8s`) e já existem na AWS.
-- **CI** (`ci.yml`): `./mvnw clean verify` em push/PR para `main`. **Terraform** (`terraform-check.yml`): `fmt`, `init` e `validate` quando `terraform/**` muda.
+- **CI** (`ci.yml`): em push/PR para `main`, uma etapa roda `./mvnw clean verify` (testes e trava de 80% de cobertura de linhas do JaCoCo) e a análise do SonarCloud com `-Dsonar.qualitygate.wait=true`, então o job falha se a cobertura cair ou se o quality gate reprovar. Só o secret `SONAR_TOKEN` é necessário. **Terraform** (`terraform-check.yml`): `fmt`, `init` e `validate` quando `terraform/**` muda.
 - **CD** (`deploy.yml`): em push na `main`, builda a imagem (Dockerfile multi-stage Maven → JDK 21 Alpine), publica em `ghcr.io` e aplica no Kubernetes (`namespace oficina-ms`, 1 réplica, Service `ClusterIP` na porta 8080, probes de readiness/liveness no Actuator).
-- **Testes** (`src/test`): consumer, repositórios DynamoDB e outbox, publisher, `ExecucaoService` e validação do contrato `AgendarExecucaoCommand`.
+- **Testes** (`src/test`, 126 testes, 89,6% de cobertura de linhas): consumer, repositórios DynamoDB (execução, diagnóstico, catálogo, outbox), publisher, métricas, `ExecucaoService`, controllers e validação dos contratos.
 
 ## 11. Lacunas e pontos de atenção
 
@@ -353,5 +353,5 @@ Itens que você citou como pendentes, mais o que a análise do código mostrou:
 - O deploy (`deploy.yml`) não define `SQS_*` nem `OUTBOX_*` no ConfigMap. Então, **como está, o pod sobe com consumidor e publicador desligados** e o serviço não processa nem publica nada via SQS. É preciso adicionar as URLs das filas e as flags.
 - Validation e Lombok estão no `pom.xml` sem uso no código (os controllers não usam Bean Validation). Ou usa, ou tira do pom.
 - `Scan` na outbox e na listagem de execuções sem `limite`, e na listagem do catálogo (sem paginação, ordenada em memória). A listagem de execuções já aceita paginação; o índice foi avaliado e fica para quando o volume crescer.
-- A cobertura mínima de 80% e o quality gate são exigência do desafio e ainda não estão no CI (o JaCoCo só gera relatório). BDD também consta como pendente no README.
+- A cobertura de 80% e o quality gate do Sonar já barram o CI. Para barrarem o **merge**, o check `build-test` precisa ser marcado como obrigatório na `main` (a cargo do Pedro). O BDD (fluxo ponta a ponta) ainda não foi feito.
 - Decisões em aberto com o grupo: quando a OS passa a `EM_EXECUCAO`, quem gera o `sagaId`, resposta para cancelamento de execução inexistente e ordem cancelamento/estorno.

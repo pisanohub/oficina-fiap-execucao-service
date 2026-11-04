@@ -429,6 +429,19 @@ Significado dos campos do payload: `orcamentoId`, `versao` e `pagamentoId` repet
 
 Regras: de 1 a 20 itens, sem repetir `tipo`+`itemId`. A cotação **não** cria orçamento nem reserva estoque. `400` se algum item não existir ou estiver inativo no catálogo.
 
+### OS Service: consultar serviços e peças do catálogo
+
+O OS lê os itens (e o preço atual) pelas rotas do catálogo, que substituem as rotas separadas de "serviços" e "itens de estoque" do monólito:
+
+| Rota | Função |
+| --- | --- |
+| `GET /api/v1/catalogo?ativo=true` | Lista os itens **ativos**. Filtros opcionais: `&tipo=SERVICO` ou `&tipo=PECA`, e `&nome=` (parte do nome, sem diferenciar acento nem maiúsculas) |
+| `GET /api/v1/catalogo/{tipo}/{itemId}` | Um item específico, por exemplo `/api/v1/catalogo/PECA/filtro-oleo`. `404` se não existir |
+
+Sem `?ativo=true`, a listagem traz também os itens inativos (o monólito só listava os ativos). Cada item traz `tipo`, `itemId`, `nome`, `descricao`, `precoUnitario`, `ativo` e, nas peças, `quantidadeEstoque` (serviços podem ter `tempoEstimadoMinutos`).
+
+Atenção: o identificador do item é o **`itemId` em texto** (por exemplo `filtro-oleo`), junto com o `tipo`, e não um id numérico como no monólito. O `ItemOS` do OS Service precisa guardar `tipo` e `itemId` para montar o `AgendarExecucao`. O preço lido aqui serve para exibir ou estimar; o valor fechado do orçamento é o que o Billing congela a partir de `POST /cotacoes`.
+
 ### Rotas usadas pelo mecânico/operador (não pelo OS nem pelo Billing)
 
 | Rota | Função |
