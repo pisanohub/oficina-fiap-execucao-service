@@ -33,7 +33,7 @@ final class DynamoCicloExecucaoRepository extends DynamoRepositorySupport {
     }
 
     public void cancelarExecucao(CancelarExecucaoCommand comando, Instant agora) {
-        var chaveOperacao = DynamoKeys.operacao(comando.operationId(), DynamoKeys.CANCELAMENTO);
+        var chaveOperacao = DynamoKeys.chaveOperacao(comando.operationId(), DynamoKeys.CANCELAMENTO);
         var anterior = buscar(chaveOperacao);
         if (!anterior.isEmpty()) {
             validarCancelamento(anterior, comando);
@@ -231,7 +231,7 @@ final class DynamoCicloExecucaoRepository extends DynamoRepositorySupport {
 
     private Map<String, AttributeValue> eventoDaExecucao(String tipo, String operationId,
             String causationId, String osId, Instant agora, Map<String, AttributeValue> execucao) {
-        Map<String, AttributeValue> evento = new HashMap<>(DynamoKeys.outbox(operationId));
+        Map<String, AttributeValue> evento = new HashMap<>(DynamoKeys.chaveOutbox(operationId));
         evento.put("type", texto(tipo));
         evento.put("operationId", texto(operationId));
         evento.put("sagaId", execucao.get("sagaId"));

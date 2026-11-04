@@ -20,11 +20,11 @@ final class DynamoKeys {
 
     private DynamoKeys() {}
 
-    static Map<String, AttributeValue> execucao(String osId) { return chave(PREFIXO_OS + osId, EXECUCAO); }
-    static Map<String, AttributeValue> diagnostico(String osId) { return chave(PREFIXO_OS + osId, DIAGNOSTICO); }
-    static Map<String, AttributeValue> catalogo(TipoItem tipo, String itemId) { return chave(tipo.name() + "#" + itemId, CADASTRO); }
-    static Map<String, AttributeValue> operacao(String operationId, String tipo) { return chave(PREFIXO_OPERACAO + operationId, tipo); }
-    static Map<String, AttributeValue> outbox(String operationId) { return chave(PREFIXO_OUTBOX + operationId, RESULTADO); }
+    static Map<String, AttributeValue> chaveExecucao(String osId) { return chave(PREFIXO_OS + osId, EXECUCAO); }
+    static Map<String, AttributeValue> chaveDiagnostico(String osId) { return chave(PREFIXO_OS + osId, DIAGNOSTICO); }
+    static Map<String, AttributeValue> chaveCatalogo(TipoItem tipo, String itemId) { return chave(tipo.name() + "#" + itemId, CADASTRO); }
+    static Map<String, AttributeValue> chaveOperacao(String operationId, String tipo) { return chave(PREFIXO_OPERACAO + operationId, tipo); }
+    static Map<String, AttributeValue> chaveOutbox(String operationId) { return chave(PREFIXO_OUTBOX + operationId, RESULTADO); }
 
     private static Map<String, AttributeValue> chave(String pk, String sk) {
         return Map.of(PK, AttributeValue.builder().s(pk).build(), SK, AttributeValue.builder().s(sk).build());

@@ -30,7 +30,7 @@ final class DynamoAgendamentoRepository extends DynamoRepositorySupport {
     }
 
     public AgendamentoExecucao agendarExecucao(AgendarExecucaoCommand comando, Instant agora) {
-        Map<String, AttributeValue> chaveOperacao = DynamoKeys.operacao(comando.operationId(), DynamoKeys.AGENDAMENTO);
+        Map<String, AttributeValue> chaveOperacao = DynamoKeys.chaveOperacao(comando.operationId(), DynamoKeys.AGENDAMENTO);
         Map<String, AttributeValue> existente = buscar(chaveOperacao);
         if (!existente.isEmpty()) {
             return mapearAgendamentoValidado(existente, comando);
@@ -60,7 +60,7 @@ final class DynamoAgendamentoRepository extends DynamoRepositorySupport {
         execucao.put("agendadoEm", texto(agora.toString()));
         execucao.put("itens", itens);
 
-        Map<String, AttributeValue> outbox = new HashMap<>(DynamoKeys.outbox(comando.operationId()));
+        Map<String, AttributeValue> outbox = new HashMap<>(DynamoKeys.chaveOutbox(comando.operationId()));
         outbox.put("type", texto(TipoEventoExecucao.AGENDADA.codigo()));
         outbox.put("operationId", texto(comando.operationId()));
         outbox.put("sagaId", texto(comando.sagaId()));

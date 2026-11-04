@@ -87,7 +87,7 @@ public class DynamoOutboxRepository implements OutboxRepository {
     }
 
     private Map<String, AttributeValue> chave(OutboxEvent evento) {
-        return DynamoKeys.outbox(evento.operationId());
+        return DynamoKeys.chaveOutbox(evento.operationId());
     }
 
     private AttributeValue texto(String valor) {

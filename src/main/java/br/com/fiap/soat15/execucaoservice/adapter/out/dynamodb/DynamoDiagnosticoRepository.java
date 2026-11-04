@@ -96,7 +96,7 @@ final class DynamoDiagnosticoRepository extends DynamoRepositorySupport {
     }
 
     private Map<String, AttributeValue> chaveDiagnostico(String osId) {
-        return DynamoKeys.diagnostico(osId);
+        return DynamoKeys.chaveDiagnostico(osId);
     }
 
 }
