@@ -99,8 +99,8 @@ No CI (`.github/workflows/ci.yml`), depois do build e dos testes, a análise rod
 | --- | --- | --- |
 | `SONAR_TOKEN` | secret | Token de análise. Sem ele, o CI só emite um aviso |
 | `SONAR_HOST_URL` | variável | Endereço do SonarQube. Se vazio, usa `https://sonarcloud.io` |
-| `SONAR_PROJECT_KEY` | variável | Chave do projeto, se diferente de `oficina-fiap-execucao-service` |
-| `SONAR_ORGANIZATION` | variável | Organização (só no SonarCloud) |
+| `SONAR_PROJECT_KEY` | variável | Chave do projeto no Sonar (no SonarCloud, normalmente `<organização>_<repositório>`) |
+| `SONAR_ORGANIZATION` | variável | Chave da organização. **Obrigatória no SonarCloud**: sem ela o scanner falha com "You must define the following mandatory properties: sonar.organization" |
 | `SONAR_REQUIRED` | variável | Com `true`, o CI falha quando não há `SONAR_TOKEN`, em vez de apenas avisar |
 
 Para o Sonar e a cobertura **barrarem o merge**, o check `build-test` precisa ser marcado como obrigatório na proteção da branch `main`.

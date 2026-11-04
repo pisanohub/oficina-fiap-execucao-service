@@ -17,9 +17,9 @@ jobs:
 
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
-      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
-      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+      SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || secrets.SONAR_HOST_URL }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY || secrets.SONAR_PROJECT_KEY }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION || secrets.SONAR_ORGANIZATION }}
 
     steps:
 
@@ -58,6 +58,12 @@ jobs:
       - name: Análise Sonar e quality gate
         if: env.SONAR_TOKEN != ''
         run: |
+          host="${SONAR_HOST_URL:-https://sonarcloud.io}"
+          echo "Sonar: servidor=$host projeto=${SONAR_PROJECT_KEY:-<padrão do pom.xml>} organização=${SONAR_ORGANIZATION:-<não definida>}"
+          if [[ "$host" == *sonarcloud.io* && -z "$SONAR_ORGANIZATION" ]]; then
+            echo "::error::SONAR_ORGANIZATION não está configurada (Settings > Secrets and variables > Actions > Variables). É obrigatória no SonarCloud."
+            exit 1
+          fi
           ./mvnw -B sonar:sonar \
             -Dsonar.token="$SONAR_TOKEN" \
             -Dsonar.host.url="${SONAR_HOST_URL:-https://sonarcloud.io}" \
