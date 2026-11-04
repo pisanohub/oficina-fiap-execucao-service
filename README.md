@@ -19,7 +19,7 @@ pecas.
 - springdoc-openapi (Swagger UI)
 - Lombok
 - Maven + Maven Wrapper
-- JaCoCo (cobertura de testes)
+- JaCoCo (cobertura de testes, com trava de 80%) e SonarCloud (análise de qualidade no CI)
 
 ## Como rodar localmente
 
@@ -83,7 +83,7 @@ O JaCoCo mede a cobertura e o build (`./mvnw clean verify`) **falha se a cobertu
 
 ### Sonar
 
-O projeto está configurado para o SonarQube/SonarCloud (`sonar-maven-plugin` e propriedades `sonar.*` no `pom.xml`, usando o relatório do JaCoCo). Na análise local feita em 03/11/2026 com o SonarQube Community, o *quality gate* passou, com 0 bugs, 0 vulnerabilidades, 0 *code smells*, 0 *security hotspots*, 0% de duplicação e nota A em confiabilidade, segurança e manutenibilidade.
+O projeto está configurado para o SonarQube/SonarCloud (`sonar-maven-plugin` e propriedades `sonar.*` no `pom.xml`, usando o relatório do JaCoCo). O CI do PR #22 rodou a análise no SonarCloud e o *quality gate* passou. Na análise local de 03/11/2026 com o SonarQube Community, com 0 bugs, 0 vulnerabilidades, 0 *code smells*, 0 *security hotspots*, 0% de duplicação e nota A em confiabilidade, segurança e manutenibilidade.
 
 Análise local, com um SonarQube em `localhost:9000` (token gerado no próprio SonarQube):
 
@@ -99,15 +99,15 @@ A configuração fica no próprio repositório: a organização (`sonar.organiza
 
 Para o Sonar e a cobertura **barrarem o merge**, o check `build-test` precisa ser marcado como obrigatório na proteção da branch `main`.
 
-## Observacao importante
+## Estado atual
 
-Este repositório começou como esqueleto. O primeiro incremento de diagnóstico, catálogo
-e cotação já usa DynamoDB e as mesmas rotas HTTP em todos os ambientes. O contrato
-`AgendarExecucao` está tipado e documentado. O agendamento já reserva peças e grava
-execução, deduplicação e outbox em uma única transação DynamoDB. O publicador da outbox
-envia resultados para `execucao-resultados` quando as duas variáveis de SQS acima são
-configuradas. O consumidor SQS recebe comandos quando habilitado. A consulta, o início e a conclusão das execuções
-estão disponíveis nesta branch. A autenticação e o deploy integrado ainda estão pendentes.
+O serviço está funcional e coberto por testes. Resumo do que existe na `main`:
+
+- **API HTTP** (`/api/v1`): catálogo e estoque (listar, consultar, atualizar, inativar, repor e ajustar), diagnóstico com controle de versão, cotação de preços e fila de trabalho (listar com paginação, consultar, iniciar e concluir).
+- **Mensageria**: consumo de `AgendarExecucao` e `CancelarExecucao` e publicação dos resultados via outbox, ambos ligados por configuração (`SQS_CONSUMER_ENABLED` e `OUTBOX_PUBLISHER_ENABLED`).
+- **Persistência**: DynamoDB, com agendamento, deduplicação e outbox numa única transação.
+- **Observabilidade**: métricas de negócio, filas e limites do container expostas em Prometheus (porta 8081).
+- **Qualidade**: 126 testes, cobertura de 80% e análise do Sonar barrando o CI.
 
 Próximas etapas do serviço:
 
