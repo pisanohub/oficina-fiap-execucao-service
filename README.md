@@ -131,6 +131,8 @@ Variaveis de ambiente configuraveis (ver `src/main/resources/application.yaml`):
 | `OUTBOX_PUBLISHER_ENABLED` | `false` | Ativa o publicador após configurar a fila |
 | `OUTBOX_POLL_DELAY_MS` | `5000` | Intervalo entre buscas na outbox |
 
+No cluster, o workflow de deploy grava essas variáveis no ConfigMap `execucao-service-config`: as URLs das filas e DLQs são montadas a partir de `SQS_BASE_URL` (variável de repositório opcional, padrão `https://sqs.us-east-1.amazonaws.com/381492182695`) e o consumidor, o publicador e as métricas das filas ficam ligados. As credenciais AWS vêm do perfil da instância, sem chaves no ConfigMap.
+
 Health check: `GET :8081/actuator/health`. Métricas Prometheus: `GET :8081/actuator/prometheus` (detalhes em [observabilidade](docs/observabilidade.md)).
 
 ## Contratos
@@ -199,7 +201,7 @@ Para o Sonar e a cobertura **barrarem o merge**, o check `build-test` precisa se
 O serviço está funcional e coberto por testes. Resumo do que existe na `main`:
 
 - **API HTTP** (`/api/v1`): catálogo e estoque (listar, consultar, atualizar, inativar, repor e ajustar), diagnóstico com controle de versão, cotação de preços e fila de trabalho (listar com paginação, consultar, iniciar e concluir).
-- **Mensageria**: consumo de `AgendarExecucao` e `CancelarExecucao` e publicação dos resultados via outbox, ambos ligados por configuração (`SQS_CONSUMER_ENABLED` e `OUTBOX_PUBLISHER_ENABLED`).
+- **Mensageria**: consumo de `AgendarExecucao` e `CancelarExecucao` e publicação dos resultados via outbox, ambos ligados por configuração (`SQS_CONSUMER_ENABLED` e `OUTBOX_PUBLISHER_ENABLED`) e ativos no deploy, que já aponta para as filas reais.
 - **Persistência**: DynamoDB, com agendamento, deduplicação e outbox numa única transação.
 - **Observabilidade**: métricas de negócio, filas e limites do container em Prometheus (porta 8081), traces OpenTelemetry com o contexto atravessando o SQS e logs em JSON correlacionados (`trace.id`, `os.id`, `saga.id`).
 - **Qualidade**: 151 testes, cobertura de 80% e análise do Sonar barrando o CI.
@@ -208,5 +210,5 @@ Próximas etapas do serviço:
 
 - Alinhar com o grupo os contratos e a orquestração do cancelamento e do estorno.
 - Autenticação e autorização para operadores e serviços nas rotas `/api/v1`.
-- Variáveis de SQS no deploy e validação do fluxo na AWS.
+- Validar o fluxo na AWS: permissão da LabRole para SQS e DynamoDB no cluster.
 - Dashboard e alertas no New Relic.

@@ -100,16 +100,18 @@ A suíte automatizada é executada com `./mvnw clean verify`. O fluxo foi exerci
 ## Limitações e decisões pendentes
 
 - Consulta da fila de trabalho e busca da outbox fazem `Scan` na tabela. A listagem de execuções aceita paginação opcional (`limite` e `pagina`); o índice secundário foi avaliado (ver [funcionamento-do-servico.md](funcionamento-do-servico.md)) e fica para quando o volume crescer.
-- O consumidor e o publicador são desabilitados por padrão e dependem de URLs e permissões configuradas no ambiente.
+- O consumidor e o publicador são desabilitados por padrão na aplicação. O deploy (`.github/workflows/deploy.yml`) já configura as URLs das quatro filas e liga o consumidor, o publicador e as métricas das filas; falta confirmar na prática que a LabRole do nó tem permissão de SQS e DynamoDB.
 - A sincronização do status da OS e os contratos de mensagens precisam de validação conjunta. As quatro filas já existem na AWS (criadas pelo Pedro).
 - A ordem do cancelamento e do estorno, e a resposta para cancelamento sem execução existente, permanecem para acordo com o grupo.
 - Cancelamento após início do trabalho e tratamento de peças já utilizadas não fazem parte da regra atual.
-- A integração de infraestrutura, as políticas de acesso e o deploy precisam ser verificados no ambiente compartilhado.
+- As políticas de acesso precisam ser verificadas no ambiente compartilhado: o pod usa as credenciais do perfil da instância EC2 (`LabInstanceProfile`), sem chaves estáticas. Um `AccessDenied` nos logs do deploy indica falta de permissão da LabRole.
 
 ## Filas e DLQs
 
 As quatro filas (`execucao-comandos`, `execucao-comandos-dlq`, `execucao-resultados` e `execucao-resultados-dlq`) foram criadas pelo Pedro na conta e região do grupo (`us-east-1`) e pertencem ao repositório de infraestrutura `oficina-fiap-infra-k8s`. Este repositório **não** define filas em Terraform, para que um único estado seja dono de cada recurso. A configuração aplicada pela infraestrutura é visibilidade de 30 segundos e `maxReceiveCount = 5`: uma mensagem não confirmada vai para a DLQ após 5 recebimentos. Os demais parâmetros (retenção das DLQs, espera longa) devem ser consultados no repositório de infraestrutura. A DLQ de resultados recebe falhas do consumidor OS Service, não falhas de publicação pelo Execução Service.
 
 Configure `SQS_EXECUCAO_COMANDOS_URL` e `SQS_EXECUCAO_RESULTADOS_URL` com as URLs das filas principais (formato `https://sqs.us-east-1.amazonaws.com/<conta>/<nome-da-fila>`) e habilite os componentes correspondentes.
+
+No cluster, o deploy faz isso no ConfigMap `execucao-service-config`: monta as URLs das filas principais e das DLQs a partir de `SQS_BASE_URL` (variável de repositório opcional; o padrão é `https://sqs.us-east-1.amazonaws.com/381492182695`) e liga `SQS_CONSUMER_ENABLED`, `OUTBOX_PUBLISHER_ENABLED` e `SQS_METRICS_ENABLED`. O Deployment carrega um checksum do ConfigMap no template, então qualquer mudança nessas variáveis reinicia os pods. Depois do rollout, o workflow mostra as últimas 50 linhas de log do pod para expor erros de permissão.
 
 No teste local com ElasticMQ, uma mensagem não confirmada é encaminhada à DLQ após o número de recebimentos configurado no emulador. Esse teste verifica o redirecionamento, e não substitui a verificação da configuração na AWS.
