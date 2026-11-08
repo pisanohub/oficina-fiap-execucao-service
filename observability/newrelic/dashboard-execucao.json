@@ -1,0 +1,1068 @@
+{
+  "name": "Execução Service",
+  "description": "Execução Service (oficina-ms): negócio, mensageria e saga, pod e JVM, traces e logs. Fonte: nri-prometheus, integração Kubernetes, OTLP e logs.",
+  "permissions": "PUBLIC_READ_WRITE",
+  "pages": [
+    {
+      "name": "Negócio",
+      "description": "Agendamentos, desfechos e tempos da execução",
+      "widgets": [
+        {
+          "title": "Agendamentos aceitos x rejeitados",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(oficina_execucao_agendamentos_total) FROM Metric WHERE application = 'execucao-service' FACET resultado SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Cancelamentos aceitos x recusados",
+          "layout": {
+            "column": 5,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT filter(sum(oficina_execucao_eventos_publicados_total), WHERE tipo = 'ExecucaoCancelada') AS 'Canceladas', filter(sum(oficina_execucao_eventos_publicados_total), WHERE tipo = 'CancelamentoExecucaoRecusado') AS 'Cancelamento recusado' FROM Metric WHERE application = 'execucao-service' SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Taxa de rejeição por estoque (%)",
+          "layout": {
+            "column": 9,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT filter(sum(oficina_execucao_agendamentos_total), WHERE resultado = 'rejeitada') * 100 / sum(oficina_execucao_agendamentos_total) AS 'Rejeição (%)' FROM Metric WHERE application = 'execucao-service' SINCE 1 day ago"
+              }
+            ],
+            "thresholds": [
+              {
+                "alertSeverity": "WARNING",
+                "value": 20
+              },
+              {
+                "alertSeverity": "CRITICAL",
+                "value": 50
+              }
+            ]
+          }
+        },
+        {
+          "title": "Execuções por status (eventos publicados por tipo)",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 8,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.area"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(oficina_execucao_eventos_publicados_total) FROM Metric WHERE application = 'execucao-service' FACET tipo TIMESERIES AUTO SINCE 1 day ago"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Execuções por status (total)",
+          "layout": {
+            "column": 9,
+            "row": 4,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(oficina_execucao_eventos_publicados_total) FROM Metric WHERE application = 'execucao-service' FACET tipo SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Agendamentos por resultado",
+          "layout": {
+            "column": 1,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(oficina_execucao_agendamentos_total) FROM Metric WHERE application = 'execucao-service' FACET resultado TIMESERIES AUTO SINCE 1 day ago"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Duração da execução e espera na fila (média e máximo, min)",
+          "layout": {
+            "column": 7,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(oficina_execucao_duracao_seconds_sum) / sum(oficina_execucao_duracao_seconds_count) / 60 AS 'Duração média', max(oficina_execucao_duracao_seconds_max) / 60 AS 'Duração máxima', sum(oficina_execucao_fila_espera_seconds_sum) / sum(oficina_execucao_fila_espera_seconds_count) / 60 AS 'Espera média', max(oficina_execucao_fila_espera_seconds_max) / 60 AS 'Espera máxima' FROM Metric WHERE application = 'execucao-service' TIMESERIES AUTO SINCE 1 day ago"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Peças reservadas e estoque (unidades)",
+          "layout": {
+            "column": 1,
+            "row": 10,
+            "width": 12,
+            "height": 2
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(oficina_execucao_pecas_reservadas_total) AS 'Peças reservadas', sum(oficina_execucao_estoque_reposto_total) AS 'Estoque reposto', sum(oficina_execucao_estoque_ajustes_total) AS 'Ajustes de estoque' FROM Metric WHERE application = 'execucao-service' SINCE 1 day ago"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Mensageria e Saga",
+      "description": "Filas SQS, DLQs, outbox e comandos",
+      "widgets": [
+        {
+          "title": "Mensagens nas DLQs (visíveis)",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT latest(oficina_execucao_fila_mensagens) FROM Metric WHERE application = 'execucao-service' AND fila LIKE '%dlq' AND estado = 'visiveis' FACET fila"
+              }
+            ],
+            "thresholds": [
+              {
+                "alertSeverity": "CRITICAL",
+                "value": 1
+              }
+            ]
+          }
+        },
+        {
+          "title": "Atraso da outbox (s)",
+          "layout": {
+            "column": 5,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT latest(oficina_execucao_outbox_atraso_seconds) AS 'Atraso atual (s)' FROM Metric WHERE application = 'execucao-service'"
+              }
+            ],
+            "thresholds": [
+              {
+                "alertSeverity": "WARNING",
+                "value": 60
+              },
+              {
+                "alertSeverity": "CRITICAL",
+                "value": 300
+              }
+            ]
+          }
+        },
+        {
+          "title": "Falhas de comando e de publicação",
+          "layout": {
+            "column": 9,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(oficina_execucao_comandos_falhas_total) AS 'Falhas de comando', sum(oficina_execucao_eventos_falhas_total) AS 'Falhas de publicação' FROM Metric WHERE application = 'execucao-service' SINCE 1 hour ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Mensagens nas filas",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT latest(oficina_execucao_fila_mensagens) FROM Metric WHERE application = 'execucao-service' FACET fila, estado TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Atraso da outbox ao longo do tempo (s)",
+          "layout": {
+            "column": 7,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT max(oficina_execucao_outbox_atraso_seconds) AS 'Atraso (s)' FROM Metric WHERE application = 'execucao-service' TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Comandos processados por tipo",
+          "layout": {
+            "column": 1,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(oficina_execucao_comandos_processados_total) FROM Metric WHERE application = 'execucao-service' FACET tipo TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Falhas de comando por natureza (permanente x transitória)",
+          "layout": {
+            "column": 7,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(oficina_execucao_comandos_falhas_total) FROM Metric WHERE application = 'execucao-service' FACET natureza, tipo TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Tempo de processamento de comando (ms)",
+          "layout": {
+            "column": 1,
+            "row": 10,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(oficina_execucao_comandos_duracao_seconds_sum) * 1000 / sum(oficina_execucao_comandos_duracao_seconds_count) AS 'Média', max(oficina_execucao_comandos_duracao_seconds_max) * 1000 AS 'Máximo' FROM Metric WHERE application = 'execucao-service' FACET tipo TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Eventos publicados em execucao-resultados",
+          "layout": {
+            "column": 7,
+            "row": 10,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(oficina_execucao_eventos_publicados_total) AS 'Publicados', sum(oficina_execucao_eventos_falhas_total) AS 'Falhas' FROM Metric WHERE application = 'execucao-service' TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Consumo e publicação SQS (observações, ms)",
+          "layout": {
+            "column": 1,
+            "row": 13,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(execucao_mensagens_consumo_seconds_sum) * 1000 / sum(execucao_mensagens_consumo_seconds_count) AS 'Consumo (média)', sum(execucao_mensagens_publicacao_seconds_sum) * 1000 / sum(execucao_mensagens_publicacao_seconds_count) AS 'Publicação (média)' FROM Metric WHERE application = 'execucao-service' TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Observações de mensageria com erro",
+          "layout": {
+            "column": 7,
+            "row": 13,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(execucao_mensagens_consumo_seconds_count) AS 'Consumo', sum(execucao_mensagens_publicacao_seconds_count) AS 'Publicação' FROM Metric WHERE application = 'execucao-service' AND error != 'none' TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pod e JVM",
+      "description": "CPU e memória contra os limites do container, reinícios e JVM",
+      "widgets": [
+        {
+          "title": "Pods e reinícios",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT uniqueCount(podName) AS 'Pods', max(restartCount) AS 'Reinícios (máx. por container)' FROM K8sContainerSample WHERE namespaceName = 'oficina-ms' AND containerName = 'execucao-service' SINCE 30 minutes ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Memória em uso / limite (%)",
+          "layout": {
+            "column": 5,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT max(memoryWorkingSetUtilization) AS 'Memória (% do limite)' FROM K8sContainerSample WHERE namespaceName = 'oficina-ms' AND containerName = 'execucao-service' FACET podName SINCE 10 minutes ago"
+              }
+            ],
+            "thresholds": [
+              {
+                "alertSeverity": "WARNING",
+                "value": 80
+              },
+              {
+                "alertSeverity": "CRITICAL",
+                "value": 90
+              }
+            ]
+          }
+        },
+        {
+          "title": "CPU em uso / limite (%)",
+          "layout": {
+            "column": 9,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT max(cpuCoresUtilization) AS 'CPU (% do limite)' FROM K8sContainerSample WHERE namespaceName = 'oficina-ms' AND containerName = 'execucao-service' FACET podName SINCE 10 minutes ago"
+              }
+            ],
+            "thresholds": [
+              {
+                "alertSeverity": "WARNING",
+                "value": 70
+              },
+              {
+                "alertSeverity": "CRITICAL",
+                "value": 90
+              }
+            ]
+          }
+        },
+        {
+          "title": "CPU usada x limite (núcleos)",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT average(cpuUsedCores) AS 'Usado', max(cpuLimitCores) AS 'Limite', max(cpuRequestedCores) AS 'Request' FROM K8sContainerSample WHERE namespaceName = 'oficina-ms' AND containerName = 'execucao-service' TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Memória usada x limite (MiB)",
+          "layout": {
+            "column": 7,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT average(memoryWorkingSetBytes) / 1048576 AS 'Working set', max(memoryLimitBytes) / 1048576 AS 'Limite', max(memoryRequestedBytes) / 1048576 AS 'Request' FROM K8sContainerSample WHERE namespaceName = 'oficina-ms' AND containerName = 'execucao-service' TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Memória do container vista pelo serviço (cgroup, MiB)",
+          "layout": {
+            "column": 1,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT average(oficina_container_memoria_uso_bytes) / 1048576 AS 'Uso', max(oficina_container_memoria_limite_bytes) / 1048576 AS 'Limite' FROM Metric WHERE application = 'execucao-service' TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "CPU do processo (% do limite)",
+          "layout": {
+            "column": 7,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT average(process_cpu_usage) * average(system_cpu_count) * 100 / max(oficina_container_cpu_limite_nucleos) AS 'Processo (% do limite)' FROM Metric WHERE application = 'execucao-service' TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Throttling de CPU (períodos limitados)",
+          "layout": {
+            "column": 1,
+            "row": 10,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(containerCpuCfsThrottledPeriodsDelta) AS 'Períodos limitados' FROM K8sContainerSample WHERE namespaceName = 'oficina-ms' AND containerName = 'execucao-service' TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Reinícios dos containers",
+          "layout": {
+            "column": 7,
+            "row": 10,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT max(restartCount) FROM K8sContainerSample WHERE namespaceName = 'oficina-ms' AND containerName = 'execucao-service' FACET podName TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Heap da JVM (MiB)",
+          "layout": {
+            "column": 1,
+            "row": 13,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(jvm_memory_used_bytes) / 1048576 AS 'Heap usado' FROM Metric WHERE application = 'execucao-service' AND area = 'heap' TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Pausas de GC (ms por minuto)",
+          "layout": {
+            "column": 5,
+            "row": 13,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(jvm_gc_pause_seconds_sum) * 1000 AS 'Pausa de GC' FROM Metric WHERE application = 'execucao-service' TIMESERIES 1 minute"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Threads da JVM",
+          "layout": {
+            "column": 9,
+            "row": 13,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT latest(jvm_threads_live_threads) AS 'Vivas', latest(jvm_threads_peak_threads) AS 'Pico' FROM Metric WHERE application = 'execucao-service' TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Traces e logs",
+      "description": "HTTP, spans de mensageria e logs ERROR",
+      "widgets": [
+        {
+          "title": "Requisições HTTP por status",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.area"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(http_server_requests_seconds_count) FROM Metric WHERE application = 'execucao-service' AND uri NOT LIKE '/actuator%' FACET status TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Latência HTTP (p50, p95, p99, s)",
+          "layout": {
+            "column": 7,
+            "row": 1,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT bucketPercentile(http_server_requests_seconds_bucket, 50, 95, 99) FROM Metric WHERE application = 'execucao-service' AND uri NOT LIKE '/actuator%' TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Erros HTTP 5xx por rota",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT sum(http_server_requests_seconds_count) FROM Metric WHERE application = 'execucao-service' AND outcome = 'SERVER_ERROR' FACET method, uri SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Taxa de erro HTTP 5xx (%)",
+          "layout": {
+            "column": 7,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT filter(sum(http_server_requests_seconds_count), WHERE outcome = 'SERVER_ERROR') * 100 / sum(http_server_requests_seconds_count) AS '5xx (%)' FROM Metric WHERE application = 'execucao-service' AND uri NOT LIKE '/actuator%' TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Spans de mensageria (quantidade e duração média, ms)",
+          "layout": {
+            "column": 1,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT count(*) AS 'Spans', average(duration.ms) AS 'Duração média (ms)' FROM Span WHERE service.name = 'execucao-service' AND name IN ('process execucao-comandos', 'send execucao-resultados') FACET name TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Spans de mensageria com erro",
+          "layout": {
+            "column": 7,
+            "row": 7,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT count(*) FROM Span WHERE service.name = 'execucao-service' AND name IN ('process execucao-comandos', 'send execucao-resultados') AND (otel.status_code = 'ERROR' OR error IS true) FACET name TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Últimos spans com erro",
+          "layout": {
+            "column": 1,
+            "row": 10,
+            "width": 12,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.table"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT timestamp, name, trace.id, oficina.os.id, oficina.saga.id, oficina.evento.tipo, otel.status_description, duration.ms FROM Span WHERE service.name = 'execucao-service' AND (otel.status_code = 'ERROR' OR error IS true) SINCE 1 day ago LIMIT 50"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Logs por nível",
+          "layout": {
+            "column": 1,
+            "row": 13,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.area"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'execucao-service' FACET level TIMESERIES AUTO"
+              }
+            ],
+            "legend": {
+              "enabled": true
+            }
+          }
+        },
+        {
+          "title": "Logs ERROR",
+          "layout": {
+            "column": 7,
+            "row": 13,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT count(*) AS 'Logs ERROR' FROM Log WHERE service.name = 'execucao-service' AND level = 'ERROR' SINCE 1 hour ago"
+              }
+            ],
+            "thresholds": [
+              {
+                "alertSeverity": "WARNING",
+                "value": 1
+              },
+              {
+                "alertSeverity": "CRITICAL",
+                "value": 10
+              }
+            ]
+          }
+        },
+        {
+          "title": "Últimos logs ERROR (com trace.id, os.id e saga.id)",
+          "layout": {
+            "column": 1,
+            "row": 16,
+            "width": 12,
+            "height": 4
+          },
+          "visualization": {
+            "id": "viz.table"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [
+                  0
+                ],
+                "query": "SELECT timestamp, message, logger, trace.id, os.id, saga.id, request.id FROM Log WHERE service.name = 'execucao-service' AND level = 'ERROR' SINCE 1 day ago LIMIT 100"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variables": []
+}

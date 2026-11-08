@@ -1,0 +1,34 @@
+# Valores do nri-bundle (integração do New Relic com o Kubernetes), instalado pelo workflow newrelic.yml.
+# A license key não fica aqui: vem do secret newrelic-license, criado pelo workflow no namespace newrelic.
+global:
+  cluster: oficina-fiap-k3s
+  licenseKey: ""
+  lowDataMode: true
+
+# CPU, memória, requests/limits e reinícios dos pods de todos os namespaces (oficina-ms inclusive).
+newrelic-infrastructure:
+  enabled: true
+
+kube-state-metrics:
+  enabled: true
+
+nri-metadata-injection:
+  enabled: true
+
+# Logs do stdout dos containers (os serviços já escrevem JSON).
+newrelic-logging:
+  enabled: true
+
+# Coleta o /actuator/prometheus dos pods atrás dos Services com prometheus.io/scrape: "true"
+# (k8s/metrics-service.yaml). scrape_endpoints coleta cada pod, e não o Service balanceado.
+nri-prometheus:
+  enabled: true
+  config:
+    scrape_services: false
+    scrape_endpoints: true
+
+nri-kube-events:
+  enabled: true
+
+newrelic-pixie:
+  enabled: false

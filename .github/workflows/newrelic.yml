@@ -1,0 +1,75 @@
+name: New Relic - Integração Kubernetes (nri-bundle)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: newrelic-nri-bundle
+  cancel-in-progress: false
+
+env:
+  NRI_BUNDLE_VERSION: 8.0.14
+  NAMESPACE_NEWRELIC: newrelic
+
+jobs:
+
+  instalar-nri-bundle:
+
+    runs-on: ubuntu-latest
+
+    env:
+      NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+
+    steps:
+
+      - name: Verificar license key
+        run: |
+          if [ -z "$NEW_RELIC_LICENSE_KEY" ]; then
+            echo "::error::O secret NEW_RELIC_LICENSE_KEY não está configurado no repositório (Settings > Secrets and variables > Actions). Use a license key de ingestão do New Relic."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar kubectl
+        env:
+          KUBECONFIG_CONTEUDO: ${{ secrets.KUBECONFIG }}
+        run: |
+          mkdir -p "$HOME/.kube"
+          printf '%s\n' "$KUBECONFIG_CONTEUDO" > "$HOME/.kube/config"
+
+      - name: Instalar Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v3.18.4
+
+      - name: Verificar cluster
+        run: kubectl get nodes
+
+      - name: Criar namespace e secret da license key
+        run: |
+          kubectl create namespace "$NAMESPACE_NEWRELIC" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic newrelic-license \
+            --namespace "$NAMESPACE_NEWRELIC" \
+            --from-literal=license-key="$NEW_RELIC_LICENSE_KEY" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Instalar ou atualizar integração New Relic
+        run: |
+          helm repo add newrelic https://helm-charts.newrelic.com --force-update
+          helm repo update
+          helm upgrade --install newrelic-bundle newrelic/nri-bundle \
+            --namespace "$NAMESPACE_NEWRELIC" \
+            --version "$NRI_BUNDLE_VERSION" \
+            --values k8s/newrelic-values.yaml \
+            --set global.customSecretName=newrelic-license \
+            --set global.customSecretLicenseKey=license-key \
+            --wait \
+            --timeout 10m
+
+      - name: Exibir pods do New Relic
+        run: kubectl get pods -n "$NAMESPACE_NEWRELIC"
