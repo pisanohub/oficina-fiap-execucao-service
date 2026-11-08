@@ -41,6 +41,9 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    env:
+      NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+
     steps:
 
       - name: Checkout
@@ -66,9 +69,21 @@ jobs:
             --namespace=${{ env.NAMESPACE }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
+      - name: Criar secret de ingestão do New Relic
+        if: env.NEW_RELIC_LICENSE_KEY != ''
+        run: |
+          kubectl create secret generic newrelic-license \
+            --namespace=${{ env.NAMESPACE }} \
+            --from-literal=license-key="$NEW_RELIC_LICENSE_KEY" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Aplicar ConfigMap
         run: |
+          # O profile newrelic exporta os traces por OTLP; só é ligado quando a license key existe.
+          PERFIL=""
+          if [ -n "$NEW_RELIC_LICENSE_KEY" ]; then PERFIL="--from-literal=SPRING_PROFILES_ACTIVE=newrelic"; fi
           kubectl create configmap execucao-service-config \
+            $PERFIL \
             --from-literal=AWS_REGION="us-east-1" \
             --from-literal=DYNAMODB_TABLE_NAME="execucao_service" \
             --from-literal=MANAGEMENT_SERVER_PORT="8081" \

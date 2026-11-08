@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <springProperty name="serviceName" source="spring.application.name" defaultValue="execucao-service"/>
+
+    <appender name="jsonConsole" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+            <providers>
+                <timestamp>
+                    <fieldName>@timestamp</fieldName>
+                </timestamp>
+                <logLevel>
+                    <fieldName>level</fieldName>
+                </logLevel>
+                <threadName>
+                    <fieldName>thread</fieldName>
+                </threadName>
+                <loggerName>
+                    <fieldName>logger</fieldName>
+                </loggerName>
+                <message/>
+                <mdc>
+                    <excludeMdcKeyName>traceId</excludeMdcKeyName>
+                    <excludeMdcKeyName>spanId</excludeMdcKeyName>
+                </mdc>
+                <pattern>
+                    <omitEmptyFields>true</omitEmptyFields>
+                    <pattern>{"service.name":"${serviceName}","trace.id":"%mdc{traceId}","span.id":"%mdc{spanId}"}</pattern>
+                </pattern>
+                <stackTrace>
+                    <fieldName>stack_trace</fieldName>
+                </stackTrace>
+            </providers>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="jsonConsole"/>
+    </root>
+</configuration>

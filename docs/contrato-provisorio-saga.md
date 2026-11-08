@@ -111,6 +111,12 @@ sqs.sendMessage(SendMessageRequest.builder()
         .build());
 ```
 
+### Rastreamento (traceparent)
+
+Para o trace da Saga atravessar os serviços no New Relic, envie o contexto do trace no **atributo de mensagem** SQS `traceparent` (padrão W3C, por exemplo `00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`), e não no corpo JSON. Com a instrumentação do Spring (Micrometer Tracing), basta injetar o contexto atual nos atributos da mensagem. O atributo é opcional: sem ele, o Execução começa um trace novo.
+
+Os eventos que o Execução publica em `execucao-resultados` trazem o mesmo atributo `traceparent`, no mesmo trace do comando (ou da chamada HTTP do mecânico) que os originou. Para continuar o trace no OS, leia os atributos ao receber (`MessageAttributeNames=All`).
+
 ### Cuidados com o JSON
 
 - Todos os campos obrigatórios devem estar presentes. Envie **só** os campos descritos aqui.

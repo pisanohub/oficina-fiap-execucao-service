@@ -9,6 +9,7 @@ import br.com.fiap.soat15.execucaoservice.domain.model.StatusExecucao;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoEventoExecucao;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
 import br.com.fiap.soat15.execucaoservice.domain.model.MotivoResultadoExecucao;
+import br.com.fiap.soat15.execucaoservice.config.observability.ContextoRastreamento;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.CancellationReason;
@@ -25,8 +26,11 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 final class DynamoAgendamentoRepository extends DynamoRepositorySupport {
-    DynamoAgendamentoRepository(DynamoDbClient dynamo, String tableName) {
+    private final ContextoRastreamento rastreamento;
+
+    DynamoAgendamentoRepository(DynamoDbClient dynamo, String tableName, ContextoRastreamento rastreamento) {
         super(dynamo, tableName);
+        this.rastreamento = rastreamento;
     }
 
     public AgendamentoExecucao agendarExecucao(AgendarExecucaoCommand comando, Instant agora) {
@@ -71,6 +75,7 @@ final class DynamoAgendamentoRepository extends DynamoRepositorySupport {
         outbox.put("versaoOrcamento", numero(payload.versao()));
         outbox.put("pagamentoId", texto(payload.pagamentoId()));
         outbox.put("published", AttributeValue.builder().bool(false).build());
+        anexarRastreamento(outbox, rastreamento.capturar());
 
         List<TransactWriteItem> writes = new ArrayList<>();
         List<ItemSolicitado> pecas = payload.itens().stream()

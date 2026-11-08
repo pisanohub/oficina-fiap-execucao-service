@@ -4,6 +4,9 @@ import br.com.fiap.soat15.execucaoservice.application.ExecucaoJaAgendadaExceptio
 import br.com.fiap.soat15.execucaoservice.application.ExecucaoMetricas;
 import br.com.fiap.soat15.execucaoservice.application.ExecucaoService;
 import br.com.fiap.soat15.execucaoservice.application.PecaIndisponivelException;
+import br.com.fiap.soat15.execucaoservice.config.observability.CamposCorrelacao;
+import br.com.fiap.soat15.execucaoservice.config.observability.ObservacaoMensagens;
+import br.com.fiap.soat15.execucaoservice.config.observability.RastreamentoDeTeste;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -34,7 +37,11 @@ class AgendarExecucaoConsumerTest {
     private final ExecucaoService service = mock(ExecucaoService.class);
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
     private final ExecucaoMetricas metricas = new ExecucaoMetricas(registry);
-    private final AgendarExecucaoConsumer consumer = new AgendarExecucaoConsumer(sqs, service, metricas, "queue");
+    private final AgendarExecucaoConsumer consumer = novoConsumidor("queue", 10);
+
+    private AgendarExecucaoConsumer novoConsumidor(String fila, int maximo) {
+        return new AgendarExecucaoConsumer(sqs, service, metricas, ObservacaoMensagens.desligada(), fila, maximo);
+    }
 
     private static Message mensagem(String id, String body) {
         return Message.builder().messageId(id).receiptHandle("receipt-" + id).body(body).build();
@@ -134,7 +141,7 @@ class AgendarExecucaoConsumerTest {
     @Test
     void pedeAoSqsAQuantidadeConfiguradaDeMensagens() {
         recebe();
-        new AgendarExecucaoConsumer(sqs, service, metricas, "queue", 3).consumir();
+        novoConsumidor("queue", 3).consumir();
         consumer.consumir();
         ArgumentCaptor<ReceiveMessageRequest> captor = ArgumentCaptor.forClass(ReceiveMessageRequest.class);
         verify(sqs, times(2)).receiveMessage(captor.capture());
@@ -144,9 +151,9 @@ class AgendarExecucaoConsumerTest {
 
     @Test
     void rejeitaConfiguracaoInvalida() {
-        assertThatThrownBy(() -> new AgendarExecucaoConsumer(sqs, service, metricas, " ", 10)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new AgendarExecucaoConsumer(sqs, service, metricas, "queue", 0)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new AgendarExecucaoConsumer(sqs, service, metricas, "queue", 11)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> novoConsumidor(" ", 10)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> novoConsumidor("queue", 0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> novoConsumidor("queue", 11)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -177,5 +184,31 @@ class AgendarExecucaoConsumerTest {
         assertThat(registry.counter("oficina.execucao.comandos.falhas", "tipo", "CancelarExecucao", "natureza", "transitoria").count()).isEqualTo(1);
         assertThat(registry.counter("oficina.execucao.comandos.falhas", "tipo", "desconhecido", "natureza", "permanente").count()).isEqualTo(1);
         assertThat(registry.find("oficina.execucao.comandos.processados").counter()).isNull();
+    }
+
+    @Test
+    void continuaOTraceRecebidoNosAtributosDaMensagem() {
+        var rastreamento = new RastreamentoDeTeste();
+        var consumidor = new AgendarExecucaoConsumer(sqs, service, metricas, rastreamento.observacao(), "queue", 10);
+        when(sqs.receiveMessage(any(ReceiveMessageRequest.class))).thenReturn(ReceiveMessageResponse.builder()
+                .messages(Message.builder().messageId("a").receiptHandle("r").body(AGENDAR)
+                        .messageAttributes(java.util.Map.of("traceparent", MessageAttributeValue.builder()
+                                .dataType("String").stringValue(RastreamentoDeTeste.TRACEPARENT).build())).build()).build());
+        java.util.List<String> traceDuranteOProcessamento = new java.util.ArrayList<>();
+        java.util.List<String> osIdNoLog = new java.util.ArrayList<>();
+        doAnswer(chamada -> {
+            traceDuranteOProcessamento.add(rastreamento.contexto().capturar().get("traceparent"));
+            osIdNoLog.add(org.slf4j.MDC.get(CamposCorrelacao.OS_ID));
+            return null;
+        }).when(service).agendarExecucao(any());
+
+        consumidor.consumir();
+
+        assertThat(traceDuranteOProcessamento).singleElement().asString().contains(RastreamentoDeTeste.TRACE_ID);
+        assertThat(osIdNoLog).containsExactly("os-1");
+        assertThat(rastreamento.unicoSpan().getName()).isEqualTo("process execucao-comandos");
+        ArgumentCaptor<ReceiveMessageRequest> captor = ArgumentCaptor.forClass(ReceiveMessageRequest.class);
+        verify(sqs).receiveMessage(captor.capture());
+        assertThat(captor.getValue().messageAttributeNames()).containsExactly("All");
     }
 }

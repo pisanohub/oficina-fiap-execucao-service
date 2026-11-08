@@ -16,7 +16,8 @@ class OutboxEventTest {
     }
 
     private OutboxEvent evento(String tipo, String motivo, String itemId, Instant iniciadaEm) {
-        return new OutboxEvent("op-1", tipo, "saga-1", "1", "causa-1", agora, "orc-1", 2, "pag-1", motivo, itemId, iniciadaEm);
+        return new OutboxEvent("op-1", tipo, "saga-1", "1", "causa-1", agora, "orc-1", 2, "pag-1", motivo, itemId, iniciadaEm,
+                null);
     }
 
     @Test

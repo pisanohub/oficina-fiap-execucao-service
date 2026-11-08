@@ -40,6 +40,16 @@ management:
       probes:
         enabled: true
       show-details: always
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  otlp:
+    metrics:
+      export:
+        enabled: false
+  observations:
+    enable:
+      "[tasks.scheduled]": false
   metrics:
     tags:
       application: ${spring.application.name}
