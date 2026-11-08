@@ -133,6 +133,8 @@ Variaveis de ambiente configuraveis (ver `src/main/resources/application.yaml`):
 
 No cluster, o workflow de deploy grava essas variáveis no ConfigMap `execucao-service-config`: as URLs das filas e DLQs são montadas a partir de `SQS_BASE_URL` (variável de repositório opcional, padrão `https://sqs.us-east-1.amazonaws.com/381492182695`) e o consumidor, o publicador e as métricas das filas ficam ligados. As credenciais AWS vêm do perfil da instância, sem chaves no ConfigMap.
 
+Documentação da API (Swagger UI): `http://localhost:8080/swagger-ui.html`, com a especificação OpenAPI em `/v3/api-docs`. As rotas estão agrupadas em Catálogo, Estoque, Diagnóstico, Cotação e Execuções, com exemplos, códigos de resposta e erros no formato ProblemDetail. Agendar e cancelar execução não aparecem ali, porque chegam pela fila SQS `execucao-comandos` (ver o [guia de integração](docs/contrato-provisorio-saga.md)).
+
 Health check: `GET :8081/actuator/health`. Métricas Prometheus: `GET :8081/actuator/prometheus` (detalhes em [observabilidade](docs/observabilidade.md)).
 
 ## Contratos

@@ -2,6 +2,10 @@ spring:
   application:
     name: execucao-service
 
+springdoc:
+  override-with-generic-response: false
+  default-produces-media-type: application/json
+
 aws:
   region: ${AWS_REGION:us-east-1}
   dynamodb-endpoint: ${DYNAMODB_ENDPOINT_URL:}
