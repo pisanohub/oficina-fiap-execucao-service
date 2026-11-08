@@ -1,0 +1,296 @@
+{
+  "policy": {
+    "name": "Execução Service",
+    "incidentPreference": "PER_CONDITION_AND_TARGET"
+  },
+  "conditions": [
+    {
+      "name": "Execução Service - mensagem na DLQ",
+      "description": "Há comandos ou resultados na DLQ (execucao-comandos-dlq ou execucao-resultados-dlq). Veja os logs ERROR e os spans com erro pelo os.id/saga.id e reprocesse ou descarte a mensagem. Depende de SQS_METRICS_ENABLED=true.",
+      "enabled": true,
+      "nrql": {
+        "query": "SELECT max(oficina_execucao_fila_mensagens) FROM Metric WHERE application = 'execucao-service' AND fila LIKE '%dlq' AND estado = 'visiveis' FACET fila"
+      },
+      "signal": {
+        "aggregationWindow": 60,
+        "aggregationMethod": "EVENT_FLOW",
+        "aggregationDelay": 120
+      },
+      "terms": [
+        {
+          "operator": "ABOVE",
+          "threshold": 0,
+          "thresholdDuration": 120,
+          "thresholdOccurrences": "AT_LEAST_ONCE",
+          "priority": "CRITICAL"
+        }
+      ],
+      "violationTimeLimitSeconds": 86400
+    },
+    {
+      "name": "Execução Service - atraso da outbox",
+      "description": "O evento pendente mais antigo da outbox está esperando há muito tempo: o publicador parou ou o SQS está indisponível. Atenção a partir de 1 min, crítico a partir de 5 min, sustentado por 5 min.",
+      "enabled": true,
+      "nrql": {
+        "query": "SELECT max(oficina_execucao_outbox_atraso_seconds) FROM Metric WHERE application = 'execucao-service'"
+      },
+      "signal": {
+        "aggregationWindow": 60,
+        "aggregationMethod": "EVENT_FLOW",
+        "aggregationDelay": 120
+      },
+      "terms": [
+        {
+          "operator": "ABOVE",
+          "threshold": 300,
+          "thresholdDuration": 300,
+          "thresholdOccurrences": "ALL",
+          "priority": "CRITICAL"
+        },
+        {
+          "operator": "ABOVE",
+          "threshold": 60,
+          "thresholdDuration": 300,
+          "thresholdOccurrences": "ALL",
+          "priority": "WARNING"
+        }
+      ],
+      "violationTimeLimitSeconds": 86400
+    },
+    {
+      "name": "Execução Service - taxa de falha de comandos",
+      "description": "Percentual de comandos de execucao-comandos que falharam (permanente ou transitória) sobre o total tentado, em janelas de 5 min, sustentado por 15 min.",
+      "enabled": true,
+      "nrql": {
+        "query": "SELECT sum(oficina_execucao_comandos_falhas_total) * 100 / (sum(oficina_execucao_comandos_falhas_total) + sum(oficina_execucao_comandos_processados_total)) FROM Metric WHERE application = 'execucao-service'"
+      },
+      "signal": {
+        "aggregationWindow": 300,
+        "aggregationMethod": "EVENT_FLOW",
+        "aggregationDelay": 120
+      },
+      "terms": [
+        {
+          "operator": "ABOVE",
+          "threshold": 20,
+          "thresholdDuration": 900,
+          "thresholdOccurrences": "ALL",
+          "priority": "CRITICAL"
+        },
+        {
+          "operator": "ABOVE",
+          "threshold": 5,
+          "thresholdDuration": 900,
+          "thresholdOccurrences": "ALL",
+          "priority": "WARNING"
+        }
+      ],
+      "violationTimeLimitSeconds": 86400
+    },
+    {
+      "name": "Execução Service - comandos com falha permanente",
+      "description": "Comandos inválidos chegando do OS Service (falha permanente vai à DLQ em segundos).",
+      "enabled": true,
+      "nrql": {
+        "query": "SELECT sum(oficina_execucao_comandos_falhas_total) FROM Metric WHERE application = 'execucao-service' AND natureza = 'permanente' FACET tipo"
+      },
+      "signal": {
+        "aggregationWindow": 300,
+        "aggregationMethod": "EVENT_FLOW",
+        "aggregationDelay": 120
+      },
+      "terms": [
+        {
+          "operator": "ABOVE",
+          "threshold": 0,
+          "thresholdDuration": 300,
+          "thresholdOccurrences": "AT_LEAST_ONCE",
+          "priority": "WARNING"
+        }
+      ],
+      "violationTimeLimitSeconds": 86400
+    },
+    {
+      "name": "Execução Service - memória acima do limite do container",
+      "description": "Working set do container acima de 80% (atenção) ou 90% (crítico) do limite de memória (512Mi) por 5 min. Risco de OOMKilled.",
+      "enabled": true,
+      "nrql": {
+        "query": "SELECT max(memoryWorkingSetUtilization) FROM K8sContainerSample WHERE namespaceName = 'oficina-ms' AND containerName = 'execucao-service' FACET podName"
+      },
+      "signal": {
+        "aggregationWindow": 60,
+        "aggregationMethod": "EVENT_FLOW",
+        "aggregationDelay": 120
+      },
+      "terms": [
+        {
+          "operator": "ABOVE",
+          "threshold": 90,
+          "thresholdDuration": 300,
+          "thresholdOccurrences": "ALL",
+          "priority": "CRITICAL"
+        },
+        {
+          "operator": "ABOVE",
+          "threshold": 80,
+          "thresholdDuration": 300,
+          "thresholdOccurrences": "ALL",
+          "priority": "WARNING"
+        }
+      ],
+      "violationTimeLimitSeconds": 86400
+    },
+    {
+      "name": "Execução Service - CPU alta em relação ao limite",
+      "description": "Uso de CPU acima de 80% (atenção) ou 90% (crítico) do limite (500m) por 10 min.",
+      "enabled": true,
+      "nrql": {
+        "query": "SELECT max(cpuCoresUtilization) FROM K8sContainerSample WHERE namespaceName = 'oficina-ms' AND containerName = 'execucao-service' FACET podName"
+      },
+      "signal": {
+        "aggregationWindow": 60,
+        "aggregationMethod": "EVENT_FLOW",
+        "aggregationDelay": 120
+      },
+      "terms": [
+        {
+          "operator": "ABOVE",
+          "threshold": 90,
+          "thresholdDuration": 600,
+          "thresholdOccurrences": "ALL",
+          "priority": "CRITICAL"
+        },
+        {
+          "operator": "ABOVE",
+          "threshold": 80,
+          "thresholdDuration": 600,
+          "thresholdOccurrences": "ALL",
+          "priority": "WARNING"
+        }
+      ],
+      "violationTimeLimitSeconds": 86400
+    },
+    {
+      "name": "Execução Service - CPU throttling",
+      "description": "Mais de 25% dos períodos de CPU do container foram limitados (CFS throttling) por 10 min: o limite de CPU está apertado.",
+      "enabled": true,
+      "nrql": {
+        "query": "SELECT sum(containerCpuCfsThrottledPeriodsDelta) * 100 / sum(containerCpuCfsPeriodsDelta) FROM K8sContainerSample WHERE namespaceName = 'oficina-ms' AND containerName = 'execucao-service' FACET podName"
+      },
+      "signal": {
+        "aggregationWindow": 300,
+        "aggregationMethod": "EVENT_FLOW",
+        "aggregationDelay": 120
+      },
+      "terms": [
+        {
+          "operator": "ABOVE",
+          "threshold": 25,
+          "thresholdDuration": 600,
+          "thresholdOccurrences": "ALL",
+          "priority": "WARNING"
+        }
+      ],
+      "violationTimeLimitSeconds": 86400
+    },
+    {
+      "name": "Execução Service - pod reiniciando",
+      "description": "O container execucao-service reiniciou (OOMKilled, falha de liveness ou erro na subida).",
+      "enabled": true,
+      "nrql": {
+        "query": "SELECT sum(restartCountDelta) FROM K8sContainerSample WHERE namespaceName = 'oficina-ms' AND containerName = 'execucao-service' FACET podName"
+      },
+      "signal": {
+        "aggregationWindow": 60,
+        "aggregationMethod": "EVENT_FLOW",
+        "aggregationDelay": 120
+      },
+      "terms": [
+        {
+          "operator": "ABOVE",
+          "threshold": 0,
+          "thresholdDuration": 60,
+          "thresholdOccurrences": "AT_LEAST_ONCE",
+          "priority": "CRITICAL"
+        }
+      ],
+      "violationTimeLimitSeconds": 86400
+    },
+    {
+      "name": "Execução Service - erros HTTP 5xx",
+      "description": "Respostas 5xx da API (fora do Actuator) em janelas de 5 min: qualquer erro gera atenção, mais de 5 é crítico.",
+      "enabled": true,
+      "nrql": {
+        "query": "SELECT sum(http_server_requests_seconds_count) FROM Metric WHERE application = 'execucao-service' AND outcome = 'SERVER_ERROR' AND uri NOT LIKE '/actuator%'"
+      },
+      "signal": {
+        "aggregationWindow": 300,
+        "aggregationMethod": "EVENT_FLOW",
+        "aggregationDelay": 120
+      },
+      "terms": [
+        {
+          "operator": "ABOVE",
+          "threshold": 5,
+          "thresholdDuration": 300,
+          "thresholdOccurrences": "AT_LEAST_ONCE",
+          "priority": "CRITICAL"
+        },
+        {
+          "operator": "ABOVE",
+          "threshold": 0,
+          "thresholdDuration": 300,
+          "thresholdOccurrences": "AT_LEAST_ONCE",
+          "priority": "WARNING"
+        }
+      ],
+      "violationTimeLimitSeconds": 86400
+    },
+    {
+      "name": "Execução Service - falha ao publicar eventos",
+      "description": "Falhas ao publicar eventos da outbox em execucao-resultados (o evento é tentado de novo depois do lease). Sustentado indica problema no SQS.",
+      "enabled": true,
+      "nrql": {
+        "query": "SELECT sum(oficina_execucao_eventos_falhas_total) FROM Metric WHERE application = 'execucao-service'"
+      },
+      "signal": {
+        "aggregationWindow": 300,
+        "aggregationMethod": "EVENT_FLOW",
+        "aggregationDelay": 120
+      },
+      "terms": [
+        {
+          "operator": "ABOVE",
+          "threshold": 0,
+          "thresholdDuration": 900,
+          "thresholdOccurrences": "ALL",
+          "priority": "WARNING"
+        }
+      ],
+      "violationTimeLimitSeconds": 86400
+    },
+    {
+      "name": "Execução Service - logs ERROR",
+      "description": "Mais de 10 linhas de log com level ERROR em 5 min. Use trace.id, os.id e saga.id do log para achar o trace.",
+      "enabled": true,
+      "nrql": {
+        "query": "SELECT count(*) FROM Log WHERE service.name = 'execucao-service' AND level = 'ERROR'"
+      },
+      "signal": {
+        "aggregationWindow": 300,
+        "aggregationMethod": "EVENT_FLOW",
+        "aggregationDelay": 120
+      },
+      "terms": [
+        {
+          "operator": "ABOVE",
+          "threshold": 10,
+          "thresholdDuration": 300,
+          "thresholdOccurrences": "AT_LEAST_ONCE",
+          "priority": "WARNING"
+        }
+      ],
+      "violationTimeLimitSeconds": 86400
+    }
+  ]
+}

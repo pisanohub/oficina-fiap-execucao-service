@@ -2,7 +2,7 @@
 
 Este documento descreve as métricas que o serviço expõe, como elas chegam ao New Relic e como consultá-las. O desenho segue o do `oficina_fiap` (ADR-004 daquele projeto): Micrometer expõe as métricas em formato Prometheus numa porta de gerenciamento, e o `nri-bundle` do New Relic coleta os pods do cluster.
 
-> Escopo atual: **métricas** (negócio, JVM, CPU, memória e limites do container), **traces distribuídos** (OpenTelemetry, com o contexto atravessando as filas SQS e o HTTP) e **logs em JSON** correlacionados (`trace.id`, `span.id`, `os.id`, `saga.id`, `request.id`). Falta o dashboard e os alertas no New Relic (ver [pendências](#o-que-ainda-não-está-feito)).
+> Escopo atual: **métricas** (negócio, JVM, CPU, memória e limites do container), **traces distribuídos** (OpenTelemetry, com o contexto atravessando as filas SQS e o HTTP) e **logs em JSON** correlacionados (`trace.id`, `span.id`, `os.id`, `saga.id`, `request.id`). A integração com o Kubernetes, o dashboard e os alertas ficam como código neste repositório (ver [Instalação no cluster, dashboard e alertas](#instalação-no-cluster-dashboard-e-alertas)).
 
 ## Como funciona
 
@@ -129,6 +129,8 @@ FROM K8sContainerSample WHERE containerName = 'execucao-service' FACET podName T
 
 ### Alertas sugeridos
 
+As condições efetivamente provisionadas estão em `observability/newrelic/alertas.json` (ver [abaixo](#alertas)); esta tabela é o resumo do raciocínio.
+
 | Condição | Motivo |
 | --- | --- |
 | `fila_mensagens{fila=~".*dlq", estado="visiveis"} > 0` | Há comandos ou resultados que não foram processados |
@@ -227,9 +229,111 @@ Exemplo real:
  "trace.id":"fc6dd62d7cf940b0aa8cab303218b03c","span.id":"dfb3faa68b030bba"}
 ```
 
+## Instalação no cluster, dashboard e alertas
+
+Tudo é código neste repositório. São três passos, nesta ordem:
+
+| Passo | O que faz | Onde |
+| --- | --- | --- |
+| 1. Secret no GitHub | License key de ingestão | `NEW_RELIC_LICENSE_KEY` em Settings > Secrets and variables > Actions |
+| 2. Workflow `newrelic.yml` | Instala o `nri-bundle` no cluster | `.github/workflows/newrelic.yml` e `k8s/newrelic-values.yaml` |
+| 3. Provisionamento | Cria o dashboard, a política e as condições de alerta | `scripts/newrelic-provisionar.sh` e `observability/newrelic/` |
+
+### 1. License key no GitHub
+
+Crie o secret `NEW_RELIC_LICENSE_KEY` no repositório com a **license key de ingestão** (tipo `INGEST - LICENSE`, em one.newrelic.com > API keys). Ela é usada em dois lugares:
+
+- pelo `deploy.yml`, que cria o secret `newrelic-license` no namespace `oficina-ms` e liga o profile `newrelic` (traces por OTLP). Sem o secret, o serviço sobe normalmente, mas não exporta traces;
+- pelo `newrelic.yml`, que cria o mesmo secret no namespace `newrelic` para o `nri-bundle`.
+
+### 2. Integração com o Kubernetes (`nri-bundle`)
+
+Rode o workflow **"New Relic - Integração Kubernetes (nri-bundle)"** em Actions > Run workflow. Ele é manual (`workflow_dispatch`) porque a integração é do cluster, não de cada deploy, e só precisa rodar de novo ao mudar `k8s/newrelic-values.yaml` ou a versão do chart. O workflow:
+
+1. falha logo no início se `NEW_RELIC_LICENSE_KEY` estiver vazio;
+2. usa o `KUBECONFIG` do repositório, como o deploy;
+3. cria o namespace `newrelic` e o secret `newrelic-license` (chave `license-key`);
+4. roda `helm upgrade --install newrelic-bundle newrelic/nri-bundle --version 8.0.14` com `k8s/newrelic-values.yaml`, esperando os pods (até 10 min);
+5. lista os pods do namespace `newrelic`.
+
+O `k8s/newrelic-values.yaml` segue o do `oficina_fiap`: cluster `oficina-fiap-k3s`, `lowDataMode`, `newrelic-infrastructure`, `kube-state-metrics`, injeção de metadados, logs (`newrelic-logging`), eventos do Kubernetes e `nri-prometheus` com `scrape_services: false` e `scrape_endpoints: true` (coleta cada pod atrás de um Service anotado com `prometheus.io/scrape: "true"`, como o `execucao-service-metrics`). O Pixie fica desligado. A integração cobre o cluster inteiro, então os três serviços do namespace `oficina-ms` aparecem com o mesmo `clusterName`.
+
+Para conferir depois da instalação (troque o período se precisar):
+
+```sql
+SELECT count(*) FROM Metric WHERE application = 'execucao-service' SINCE 10 minutes ago
+SELECT latest(memoryWorkingSetBytes) FROM K8sContainerSample WHERE namespaceName = 'oficina-ms' FACET containerName SINCE 10 minutes ago
+```
+
+### 3. Dashboard e alertas
+
+| Arquivo | Conteúdo |
+| --- | --- |
+| `observability/newrelic/dashboard-execucao.json` | Dashboard "Execução Service" no formato de importação do New Relic |
+| `observability/newrelic/alertas.json` | Política "Execução Service" e as condições NRQL (no formato do `AlertsNrqlConditionStaticInput` do NerdGraph) |
+| `scripts/newrelic-provisionar.sh` | Cria ou atualiza os dois pelo NerdGraph |
+
+#### Pelo script (recomendado)
+
+Precisa de `curl` e `jq`, de uma **User key** (`NRAK-...`, em one.newrelic.com > API keys; não é a license key) e do id numérico da conta. Rode localmente; as chaves ficam só no ambiente do terminal e **nunca são commitadas**:
+
+```bash
+export NEW_RELIC_API_KEY=NRAK-...      # User key
+export NEW_RELIC_ACCOUNT_ID=1234567
+scripts/newrelic-provisionar.sh validar     # só confere os arquivos, sem chamar a API
+scripts/newrelic-provisionar.sh             # dashboard + alertas (ou: dashboard | alertas)
+```
+
+O script troca o `accountIds: [0]` do JSON pela conta informada e é idempotente: procura o dashboard, a política e cada condição pelo nome e atualiza o que já existe em vez de duplicar. A chave vai num cabeçalho e nunca é impressa. Para contas na região EU, use `NEW_RELIC_API_URL=https://api.eu.newrelic.com/graphql`.
+
+Depois, ligue a política a um destino de notificação (Alerts > Workflows, por exemplo e-mail ou Slack). Sem isso os incidentes abrem, mas ninguém é avisado.
+
+#### Pela interface (alternativa para o dashboard)
+
+Em Dashboards > Import dashboard, cole o conteúdo de `dashboard-execucao.json` depois de trocar o `0` pelo id da conta:
+
+```bash
+jq --argjson conta 1234567 '(.. | objects | select(has("accountIds")) | .accountIds) |= [$conta]' \
+  observability/newrelic/dashboard-execucao.json | pbcopy
+```
+
+As condições de alerta não têm importação pela interface; use o script ou crie-as à mão a partir das consultas de `alertas.json`.
+
+#### Dashboard
+
+| Página | Widgets |
+| --- | --- |
+| Negócio | Agendamentos aceitos x rejeitados, cancelamentos aceitos x recusados, taxa de rejeição por estoque, execuções por status (eventos por tipo, no tempo e no total), duração da execução e espera na fila (média e máximo), peças reservadas e movimentação de estoque |
+| Mensageria e Saga | Mensagens nas DLQs, atraso da outbox (atual e no tempo), falhas de comando e de publicação, mensagens nas filas por estado, comandos processados por tipo, falhas por natureza (permanente x transitória), tempo de processamento de comando, eventos publicados, tempo e erros das observações de consumo e publicação |
+| Pod e JVM | Pods e reinícios, memória e CPU em % do limite, CPU e memória usadas x request x limite, memória do cgroup vista pelo serviço, CPU do processo contra o limite, throttling de CPU, reinícios no tempo, heap, pausas de GC e threads da JVM |
+| Traces e logs | Requisições HTTP por status, latência p50/p95/p99, erros 5xx por rota e taxa de 5xx, spans `process execucao-comandos` e `send execucao-resultados` (volume, duração, erros), últimos spans com erro (com `oficina.os.id`/`oficina.saga.id`), logs por nível, contagem e lista dos logs ERROR (com `trace.id`, `os.id`, `saga.id`, `request.id`) |
+
+#### Alertas
+
+Política **"Execução Service"** (um incidente por condição e alvo):
+
+| Condição | Consulta (resumo) | Atenção | Crítico |
+| --- | --- | --- | --- |
+| Mensagem na DLQ | `max(oficina_execucao_fila_mensagens)` em `*dlq`, `visiveis`, por fila | | > 0 (2 min) |
+| Atraso da outbox | `max(oficina_execucao_outbox_atraso_seconds)` | > 60 s por 5 min | > 300 s por 5 min |
+| Taxa de falha de comandos | falhas / (falhas + processados), janelas de 5 min | > 5% por 15 min | > 20% por 15 min |
+| Comandos com falha permanente | `sum(comandos_falhas_total{natureza="permanente"})` | > 0 em 5 min | |
+| Memória do container | `memoryWorkingSetUtilization` (% do limite) | > 80% por 5 min | > 90% por 5 min |
+| CPU do container | `cpuCoresUtilization` (% do limite) | > 80% por 10 min | > 90% por 10 min |
+| CPU throttling | períodos limitados / períodos (CFS) | > 25% por 10 min | |
+| Pod reiniciando | `sum(restartCountDelta)` por pod | | > 0 |
+| Erros HTTP 5xx | `http_server_requests_seconds_count` com `outcome = 'SERVER_ERROR'`, janelas de 5 min | > 0 | > 5 |
+| Falha ao publicar eventos | `sum(oficina_execucao_eventos_falhas_total)` | > 0 em todas as janelas por 15 min | |
+| Logs ERROR | `count(*)` de `Log` com `level = 'ERROR'` | > 10 em 5 min | |
+
+Os limites são um ponto de partida para o volume da demonstração; ajuste em `alertas.json` e rode o script de novo.
+
+#### Ressalvas
+
+- Os nomes dos atributos vêm do `nri-prometheus` (nomes Prometheus como estão) e da integração Kubernetes (`K8sContainerSample`). Se algum widget aparecer vazio, confira o nome no Data explorer: em especial os de histograma (`_sum`, `_count`, `_max`, `_bucket` com `bucketPercentile`) e os de throttling de CPU (`containerCpuCfs*`).
+- `oficina_execucao_fila_mensagens` só existe com `SQS_METRICS_ENABLED=true` e as URLs das filas no ConfigMap; sem isso, o widget e o alerta de DLQ ficam sem dados.
+
 ## O que ainda não está feito
 
-- **License key do New Relic no GitHub**: o deploy cria o secret `newrelic-license` e liga o profile `newrelic` só quando o secret `NEW_RELIC_LICENSE_KEY` existe no repositório. Sem ele, o serviço sobe normalmente, mas não exporta traces.
-- **Dashboard e alertas** no New Relic, com as consultas acima como base.
-- **Confirmar com o Pedro** que o `nri-bundle` está instalado no cluster e que o `nri-prometheus` enxerga o namespace `oficina-ms` (hoje o `scrape_endpoints: true` do `oficina_fiap` foi validado só para o namespace `of-fiap`).
-- **Variáveis de SQS no ConfigMap** do deploy (`SQS_*`, `SQS_METRICS_ENABLED`), que dependem das URLs das filas.
+- **Validar no cluster** que a LabRole permite ler as filas (`sqs:GetQueueAttributes`), sem o que o widget e o alerta de DLQ ficam sem dados. O deploy já liga as métricas de fila (`SQS_METRICS_ENABLED=true`).
+- **Destino de notificação** dos alertas (Workflow no New Relic), que depende de onde o grupo quer receber os avisos.
