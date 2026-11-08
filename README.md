@@ -14,12 +14,82 @@ pecas.
 - Spring Boot 4.0.5
   - Spring Web, Validation, Actuator
 - AWS SDK v2
-  - SQS (fila de execucao/diagnostico)
-  - DynamoDB Enhanced Client (catalogo de servicos e estoque de pecas)
+  - SQS (consumo de comandos e publicação de eventos da Saga)
+  - DynamoDB (tabela única com execuções, diagnósticos, catálogo, estoque e outbox)
+- Micrometer, Prometheus e OpenTelemetry (métricas e traces para o New Relic), logs em JSON com `logstash-logback-encoder`
 - springdoc-openapi (Swagger UI)
 - Lombok
 - Maven + Maven Wrapper
+- JUnit, Mockito, Cucumber e Testcontainers (testes unitários e BDD)
 - JaCoCo (cobertura de testes, com trava de 80%) e SonarCloud (análise de qualidade no CI)
+
+## Arquitetura do serviço
+
+O Execução é um dos três microsserviços da oficina, ao lado do OS Service e do Billing Service. A visão da solução inteira está no [diagrama geral da arquitetura](docs/arquitetura-geral-fase4.md), e as decisões que levaram a ela estão nos [ADRs da Fase 4](docs/decisoes-fase4/README.md).
+
+```mermaid
+flowchart LR
+    Op[Operador / mecânico] -->|HTTP /api/v1| E[Execução Service]
+    OS[OS Service] -->|catálogo e preços - HTTP| E
+    OS -->|AgendarExecucao, CancelarExecucao| QC[(SQS execucao-comandos)]
+    QC --> E
+    E <--> D[(DynamoDB execucao_service)]
+    E -->|eventos via outbox| QR[(SQS execucao-resultados)]
+    QR --> OS
+    E -.->|traces, logs e métricas| NR[New Relic]
+```
+
+**Por que um serviço separado:** catálogo e estoque ficam com quem usa as peças no dia a dia (ADR-P1). Isso permite reservar as peças e agendar o trabalho numa única transação, sem depender de outro serviço.
+
+**Por que DynamoDB:** o desafio exige um banco NoSQL. Os dados da execução variam (diagnóstico com versões, reservas, operações processadas, outbox), e o DynamoDB é gerenciado pela AWS, o que evita manter um banco dentro do cluster de nó único (ADR-P2).
+
+**Organização do código (camadas, como nas fases anteriores):**
+
+| Camada | Conteúdo |
+| --- | --- |
+| `domain/model` | Execução, diagnóstico, item de catálogo e suas regras (transições de status, validações). |
+| `application` | Casos de uso (`ExecucaoService`), interfaces de persistência, outbox e métricas de negócio. Não conhece AWS nem HTTP. |
+| `adapter/in/web` | API HTTP: catálogo, estoque, diagnóstico, cotação e fila de trabalho. |
+| `adapter/in/sqs` | Consumidor dos comandos da fila `execucao-comandos`. |
+| `adapter/out/dynamodb` | Persistência em tabela única (`pk`/`sk`), com transações para manter estoque, execução, operação e evento sempre juntos. |
+| `adapter/out/sqs` | Publicador da outbox para a fila `execucao-resultados`, e métricas das filas. |
+| `contract` | Formato dos comandos recebidos e validação do envelope. |
+| `config` | Clientes AWS, agendamentos e observabilidade (`config/observability`). |
+
+Detalhes (estados, chaves do DynamoDB, outbox e filas) em [docs/arquitetura-execucao.md](docs/arquitetura-execucao.md).
+
+## Saga: estratégia e papel do Execução
+
+**Estratégia escolhida: Saga orquestrada**, com o orquestrador dentro do OS Service (ADR-P4). O OS guarda o estado da Saga e decide o próximo passo a cada evento. Os participantes (Billing e Execução) só executam comandos e respondem com eventos.
+
+**Por que orquestrada, e não coreografada:**
+
+- Um único lugar descreve o fluxo inteiro, o que facilita depurar, testar e mostrar em que passo cada OS está.
+- Os participantes não precisam conhecer uns aos outros: o Execução só conversa com o OS, pelas suas duas filas.
+- A coreografia é mais desacoplada, mas espalha a regra do fluxo pelos três serviços e fica mais difícil de acertar e de compensar com o prazo da fase.
+
+**Papel do Execução na Saga:**
+
+| Comando recebido (`execucao-comandos`) | Resultado publicado (`execucao-resultados`) |
+| --- | --- |
+| `AgendarExecucao`, depois do pagamento confirmado | `ExecucaoAgendada` (peças reservadas e trabalho na fila) ou `ExecucaoRejeitada` (falta de peça, sem reserva parcial) |
+| `CancelarExecucao` (compensação) | `ExecucaoCancelada` (peças devolvidas ao estoque) ou `CancelamentoExecucaoRecusado` (o reparo já começou) |
+| Ações do mecânico pela API (sem comando) | `ExecucaoIniciada` e `ExecucaoConcluida` |
+
+**Como o Execução apoia as compensações:**
+
+- `ExecucaoRejeitada` é o gatilho para o OS estornar o pagamento e cancelar a OS. Como a reserva é atômica, não sobra estoque preso.
+- `CancelarExecucao` devolve as peças uma única vez, mesmo que o comando chegue repetido.
+- Trabalho já iniciado não é desfeito automaticamente: o Execução responde `CancelamentoExecucaoRecusado` e a decisão volta para o OS.
+
+**Garantias de entrega:**
+
+- **Idempotência:** cada comando é registrado pelo `operationId`. Uma repetição devolve o mesmo resultado, sem mexer no estoque de novo.
+- **Outbox transacional:** o evento é gravado na mesma transação da mudança (estoque, execução e operação) e publicado depois, com `messageId` determinístico.
+- **DLQ:** mensagens inválidas vão para a DLQ em segundos; falhas temporárias são tentadas de novo até 5 vezes.
+- **Rastreamento:** o contexto do trace (`traceparent`) atravessa as filas, então a Saga aparece como um trace só no New Relic.
+
+Contratos completos (envelopes, campos e exemplos) no [guia de integração](docs/contrato-provisorio-saga.md), e o fluxo de negócio passo a passo em [docs/fluxo-de-negocio.md](docs/fluxo-de-negocio.md).
 
 ## Como rodar localmente
 
@@ -71,6 +141,8 @@ Health check: `GET :8081/actuator/health`. Métricas Prometheus: `GET :8081/actu
 - [Collection do Postman com o fluxo completo](docs/execucao-service.postman_collection.json)
 - [Arquitetura do Execução Service e configuração das DLQs](docs/arquitetura-execucao.md)
 - [Guia de integração para OS Service e Billing: filas, mensagens, campos e HTTP](docs/contrato-provisorio-saga.md)
+- [Diagrama geral da arquitetura da Fase 4 (os três serviços, bancos e comunicação)](docs/arquitetura-geral-fase4.md)
+- [ADRs da Fase 4: decisões de arquitetura P1 a P7](docs/decisoes-fase4/README.md)
 
 ## Qualidade: cobertura e Sonar
 
@@ -136,4 +208,5 @@ Próximas etapas do serviço:
 
 - Alinhar com o grupo os contratos e a orquestração do cancelamento e do estorno.
 - Autenticação e autorização para operadores e serviços nas rotas `/api/v1`.
-- Variáveis de SQS no deploy, dashboard e alertas no New Relic.
+- Variáveis de SQS no deploy e validação do fluxo na AWS.
+- Dashboard e alertas no New Relic.
