@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 900" width="1240" height="900" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="seta-azul" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f5fa8"/>
+    </marker>
+    <marker id="seta-laranja" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b8620e"/>
+    </marker>
+    <marker id="seta-cinza" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6472"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1240" height="900" fill="#ffffff"/>
+
+  <!-- Cluster -->
+  <rect x="20" y="150" width="1200" height="230" rx="12" fill="#f3f6fa" stroke="#c9d2de"/>
+  <text x="34" y="170" font-size="12" fill="#5b6472">AWS · EC2 t3.large com K3s · namespace oficina-ms · um Deployment e um Service por serviço</text>
+
+  <!-- Linha de entrada -->
+  <g font-size="12" fill="#5b6472" text-anchor="middle">
+    <rect x="30" y="30" width="200" height="70" rx="10" fill="#f5f7fa" stroke="#c9d2de"/>
+    <text x="130" y="60" font-size="15" font-weight="bold" fill="#14304f">Cliente / Operador</text>
+    <text x="130" y="80">Postman · navegador</text>
+
+    <rect x="300" y="30" width="220" height="70" rx="10" fill="#f5f7fa" stroke="#c9d2de"/>
+    <text x="410" y="60" font-size="15" font-weight="bold" fill="#14304f">API Gateway</text>
+    <text x="410" y="80">REST · HTTPS (Fase 3)</text>
+
+    <rect x="600" y="30" width="250" height="70" rx="10" fill="#f5f7fa" stroke="#c9d2de"/>
+    <text x="725" y="60" font-size="15" font-weight="bold" fill="#14304f">Lambda de autenticação</text>
+    <text x="725" y="80">Authorizer · contrato JWT (Fase 3)</text>
+
+    <rect x="960" y="30" width="250" height="70" rx="10" fill="#eef4fb" stroke="#c9d2de"/>
+    <text x="1085" y="60" font-size="15" font-weight="bold" fill="#14304f">Mercado Pago</text>
+    <text x="1085" y="80">Checkout Pro · ambiente de testes</text>
+  </g>
+
+  <g stroke="#1f5fa8" stroke-width="1.6" fill="none">
+    <line x1="230" y1="65" x2="298" y2="65" marker-end="url(#seta-azul)"/>
+    <line x1="522" y1="65" x2="598" y2="65" marker-start="url(#seta-azul)" marker-end="url(#seta-azul)"/>
+    <path d="M410,100 V125 H215 V198" marker-end="url(#seta-azul)"/>
+    <path d="M410,125 H620 V198" stroke-dasharray="6 4" marker-end="url(#seta-azul)"/>
+    <path d="M620,125 H1000 V198" stroke-dasharray="6 4" marker-end="url(#seta-azul)"/>
+    <line x1="1150" y1="102" x2="1150" y2="198" marker-start="url(#seta-azul)" marker-end="url(#seta-azul)"/>
+    <line x1="380" y1="275" x2="453" y2="275" marker-end="url(#seta-azul)"/>
+  </g>
+  <g font-size="11" fill="#1f5fa8">
+    <text x="252" y="58">HTTPS</text>
+    <text x="532" y="58">valida JWT</text>
+    <text x="222" y="119">REST /api (rota da Fase 3)</text>
+    <text x="700" y="119">rotas para Billing e Execução a definir</text>
+    <text x="1158" y="140">checkout,</text>
+    <text x="1158" y="154">consulta,</text>
+    <text x="1158" y="168">webhook</text>
+    <text x="384" y="266">catálogo</text>
+    <text x="384" y="292">e preços</text>
+  </g>
+
+
+  <g text-anchor="middle" font-size="12" fill="#3c4654">
+    <rect x="50" y="200" width="330" height="150" rx="10" fill="#ffffff" stroke="#2e7d4f" stroke-width="1.5"/>
+    <text x="215" y="232" font-size="16" font-weight="bold" fill="#14304f">OS Service</text>
+    <text x="215" y="258">Clientes, veículos e ordens de serviço</text>
+    <text x="215" y="278">Status e histórico da OS</text>
+    <text x="215" y="298" font-weight="bold" fill="#2e7d4f">Orquestrador da Saga</text>
+    <text x="215" y="326" font-size="11" fill="#5b6472">Gabriel Souza</text>
+
+    <rect x="455" y="200" width="330" height="150" rx="10" fill="#ffffff" stroke="#c8771f" stroke-width="1.5"/>
+    <text x="620" y="232" font-size="16" font-weight="bold" fill="#14304f">Execução Service</text>
+    <text x="620" y="258">Diagnóstico e fila de trabalho</text>
+    <text x="620" y="278">Catálogo de serviços e estoque de peças</text>
+    <text x="620" y="298">Outbox transacional</text>
+    <text x="620" y="326" font-size="11" fill="#5b6472">Guilherme</text>
+
+    <rect x="860" y="200" width="330" height="150" rx="10" fill="#ffffff" stroke="#6b4bb8" stroke-width="1.5"/>
+    <text x="1025" y="232" font-size="16" font-weight="bold" fill="#14304f">Billing Service</text>
+    <text x="1025" y="258">Orçamentos (snapshot de preços)</text>
+    <text x="1025" y="278">Cobrança, confirmação e estorno</text>
+    <text x="1025" y="298">Integração com o Mercado Pago</text>
+    <text x="1025" y="326" font-size="11" fill="#5b6472">Gabriel Ramos</text>
+  </g>
+
+  <!-- Bancos -->
+  <g stroke="#5b6472" stroke-width="1.6" fill="none">
+    <line x1="215" y1="350" x2="215" y2="408" marker-end="url(#seta-cinza)"/>
+    <line x1="620" y1="350" x2="620" y2="408" marker-end="url(#seta-cinza)"/>
+    <line x1="1025" y1="350" x2="1025" y2="408" marker-end="url(#seta-cinza)"/>
+  </g>
+  <g text-anchor="middle" font-size="12" fill="#5b6472">
+    <rect x="85" y="410" width="260" height="70" rx="10" fill="#f4f0fb" stroke="#b9a8de"/>
+    <text x="215" y="440" font-size="14" font-weight="bold" fill="#14304f">os_service</text>
+    <text x="215" y="460">PostgreSQL · RDS compartilhado</text>
+
+    <rect x="490" y="410" width="260" height="70" rx="10" fill="#fdf3e7" stroke="#e2b98a"/>
+    <text x="620" y="440" font-size="14" font-weight="bold" fill="#14304f">DynamoDB</text>
+    <text x="620" y="460">tabela execucao_service (NoSQL)</text>
+
+    <rect x="895" y="410" width="260" height="70" rx="10" fill="#f4f0fb" stroke="#b9a8de"/>
+    <text x="1025" y="440" font-size="14" font-weight="bold" fill="#14304f">billing_service</text>
+    <text x="1025" y="460">PostgreSQL · RDS compartilhado</text>
+  </g>
+
+  <!-- Ligações com o SQS -->
+  <g stroke="#b8620e" stroke-width="1.8" fill="none">
+    <line x1="365" y1="352" x2="365" y2="538" marker-start="url(#seta-laranja)" marker-end="url(#seta-laranja)"/>
+    <line x1="770" y1="352" x2="770" y2="538" marker-start="url(#seta-laranja)" marker-end="url(#seta-laranja)"/>
+    <line x1="1175" y1="352" x2="1175" y2="538" marker-start="url(#seta-laranja)" marker-end="url(#seta-laranja)"/>
+  </g>
+
+  <!-- SQS -->
+  <rect x="20" y="540" width="1200" height="180" rx="12" fill="#fff8ee" stroke="#e2b98a"/>
+  <text x="620" y="566" text-anchor="middle" font-size="14" font-weight="bold" fill="#8a4a0b">Amazon SQS · 6 filas Standard, cada uma com DLQ (visibilidade 30 s, 5 tentativas)</text>
+  <g font-size="12" text-anchor="middle" fill="#5b6472">
+    <rect x="45" y="584" width="370" height="54" rx="8" fill="#ffffff" stroke="#e2b98a"/>
+    <text x="230" y="606" font-size="13" font-weight="bold" fill="#14304f">gerar-orcamento</text>
+    <text x="230" y="626">OS → Billing · comando</text>
+    <rect x="435" y="584" width="370" height="54" rx="8" fill="#ffffff" stroke="#e2b98a"/>
+    <text x="620" y="606" font-size="13" font-weight="bold" fill="#14304f">processar-pagamento</text>
+    <text x="620" y="626">OS → Billing · comando</text>
+    <rect x="825" y="584" width="370" height="54" rx="8" fill="#ffffff" stroke="#e2b98a"/>
+    <text x="1010" y="606" font-size="13" font-weight="bold" fill="#14304f">execucao-comandos</text>
+    <text x="1010" y="626">OS → Execução · AgendarExecucao, CancelarExecucao</text>
+
+    <rect x="45" y="650" width="370" height="54" rx="8" fill="#ffffff" stroke="#e2b98a"/>
+    <text x="230" y="672" font-size="13" font-weight="bold" fill="#14304f">orcamento-respondido</text>
+    <text x="230" y="692">Billing → OS · evento</text>
+    <rect x="435" y="650" width="370" height="54" rx="8" fill="#ffffff" stroke="#e2b98a"/>
+    <text x="620" y="672" font-size="13" font-weight="bold" fill="#14304f">pagamento-confirmado</text>
+    <text x="620" y="692">Billing → OS · evento</text>
+    <rect x="825" y="650" width="370" height="54" rx="8" fill="#ffffff" stroke="#e2b98a"/>
+    <text x="1010" y="672" font-size="13" font-weight="bold" fill="#14304f">execucao-resultados</text>
+    <text x="1010" y="692">Execução → OS · ExecucaoAgendada, Iniciada, Concluida...</text>
+  </g>
+
+  <!-- Plataforma -->
+  <g font-size="12" fill="#3c4654">
+    <rect x="20" y="740" width="590" height="80" rx="10" fill="#eef8f1" stroke="#9fd0b0"/>
+    <text x="40" y="766" font-size="14" font-weight="bold" fill="#14304f">New Relic + OpenTelemetry</text>
+    <text x="40" y="786">Traces OTLP dos três serviços (contexto traceparent atravessa o SQS),</text>
+    <text x="40" y="804">logs JSON correlacionados e métricas Prometheus; nri-bundle no cluster.</text>
+
+    <rect x="630" y="740" width="590" height="80" rx="10" fill="#f5f7fa" stroke="#c9d2de"/>
+    <text x="650" y="766" font-size="14" font-weight="bold" fill="#14304f">CI/CD por serviço · GitHub Actions</text>
+    <text x="650" y="786">Build, testes, JaCoCo ≥ 80%, BDD e quality gate do SonarCloud;</text>
+    <text x="650" y="804">imagem no GHCR e deploy no K3s. Infra com Terraform (estado no S3).</text>
+  </g>
+
+  <!-- Legenda -->
+  <g font-size="11.5" fill="#5b6472">
+    <line x1="30" y1="855" x2="70" y2="855" stroke="#1f5fa8" stroke-width="1.6"/>
+    <text x="78" y="859">HTTP/REST</text>
+    <line x1="170" y1="855" x2="210" y2="855" stroke="#1f5fa8" stroke-width="1.6" stroke-dasharray="6 4"/>
+    <text x="218" y="859">REST previsto, rota ainda a definir</text>
+    <line x1="430" y1="855" x2="470" y2="855" stroke="#b8620e" stroke-width="1.8"/>
+    <text x="478" y="859">SQS: publica e consome (comandos do OS, eventos dos participantes)</text>
+    <line x1="880" y1="855" x2="920" y2="855" stroke="#5b6472" stroke-width="1.6"/>
+    <text x="928" y="859">banco próprio (nenhum serviço acessa o de outro)</text>
+    <text x="30" y="884">os_service e billing_service: mesma instância RDS, databases e usuários separados (ADR-P2). Oficina FIAP · Fase 4 · 08/11/2026</text>
+  </g>
+</svg>

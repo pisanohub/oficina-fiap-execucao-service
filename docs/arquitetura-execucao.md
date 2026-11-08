@@ -11,8 +11,7 @@ No monólito, as mudanças de status e a manipulação dos itens ocorrem dentro 
 ```mermaid
 flowchart LR
     O[Operador] -->|HTTP| E[Execução Service]
-    OS[OS Service] -->|consulta diagnóstico - HTTP| E
-    B[Billing Service] -->|consulta preços - HTTP| E
+    OS[OS Service] -->|catálogo, preços e diagnóstico - HTTP| E
     OS -->|comandos| QC[(SQS execucao-comandos)]
     QC --> E
     E --> D[(DynamoDB Execução)]
@@ -21,13 +20,15 @@ flowchart LR
     OS -. comandos e resultados .-> B
 ```
 
-As quatro filas previstas para o grupo são `billing-comandos`, `billing-resultados`, `execucao-comandos` e `execucao-resultados`, cada uma com DLQ. Os nomes e recursos de infraestrutura precisam ser confirmados antes do deploy.
+O grupo tem seis filas, cada uma com DLQ, criadas pelo Pedro no `oficina-fiap-infra-k8s`: `gerar-orcamento`, `orcamento-respondido`, `processar-pagamento`, `pagamento-confirmado`, `execucao-comandos` e `execucao-resultados`. O Execução usa só as duas últimas. A visão da solução inteira está no [diagrama geral da arquitetura](arquitetura-geral-fase4.md) e as decisões nos [ADRs da Fase 4](decisoes-fase4/README.md).
+
+O Billing não chama o Execução: pelo ADR-P4, o OS guarda o preço de cada item (snapshot) ao montar a OS e o envia no comando `GerarOrcamento`. A rota de cotação (`POST /api/v1/cotacoes`) continua disponível para o OS consultar os preços.
 
 ## Fluxo de negócio
 
 1. O cliente abre a OS no OS Service. A abertura não dispara orçamento.
 2. O operador inicia o diagnóstico e registra peças e serviços no Execução Service. O diagnóstico guarda identificadores, quantidades e versão.
-3. Na ação explícita de solicitar orçamento, o OS consulta o diagnóstico e aciona o Billing. O Billing pode consultar os preços atuais no Execução Service para formar o orçamento. A atribuição e o contrato final devem ser validados com o grupo.
+3. Na ação explícita de solicitar orçamento, o OS envia ao Billing o comando `GerarOrcamento` com os itens e o preço de cada um, capturado do catálogo do Execução quando o item foi adicionado (snapshot, ADR-P4).
 4. Após aprovação e confirmação de pagamento, o OS envia `AgendarExecucao`. Execução reserva as peças e registra a execução como `AGENDADA`.
 5. O operador inicia e conclui o trabalho pelas rotas HTTP; Execução registra `EM_EXECUCAO` e depois `CONCLUIDA`, publicando os respectivos eventos.
 6. O OS recebe os eventos e decide a transição do estado da OS. A entrega do veículo pertence ao fluxo da OS.
@@ -46,6 +47,7 @@ O grupo ainda precisa decidir em que momento a OS muda para `EM_EXECUCAO`: o des
 | `adapter/out/sqs` | Publicação dos eventos de resultado no SQS. |
 | `contract` | Estruturas dos comandos recebidos. |
 | `config` | Configuração dos clientes AWS, relógio e agendamentos. |
+| `config/observability` | Correlação das requisições, observação das mensagens SQS (traces) e métricas do container. Ver [observabilidade.md](observabilidade.md). |
 | `terraform` | Definição da tabela DynamoDB presente neste repositório. |
 
 ## Estados da execução
