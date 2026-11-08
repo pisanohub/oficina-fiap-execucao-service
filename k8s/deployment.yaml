@@ -16,6 +16,8 @@ spec:
     metadata:
       labels:
         app: execucao-service
+      annotations:
+        checksum/config: "CONFIG_CHECKSUM"
 
     spec:
       imagePullSecrets:
