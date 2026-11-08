@@ -5,7 +5,6 @@ import br.com.fiap.soat15.execucaoservice.application.ExecucaoService;
 import br.com.fiap.soat15.execucaoservice.domain.model.Cotacao;
 import br.com.fiap.soat15.execucaoservice.domain.model.Diagnostico;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
-import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
 import br.com.fiap.soat15.execucaoservice.domain.model.PaginaExecucoes;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
 import org.springframework.http.ResponseEntity;
@@ -18,19 +17,17 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 @RestController
-public class ExecucaoController {
-    public static final String CABECALHO_PROXIMA_PAGINA = "X-Proxima-Pagina";
-
+public class ExecucaoController implements ExecucaoApi {
     private final ExecucaoService service;
 
     public ExecucaoController(ExecucaoService service) {
         this.service = service;
     }
 
+    @Override
     @GetMapping("/api/v1/execucoes")
     public ResponseEntity<List<ExecucaoTrabalho>> listarExecucoes(@RequestParam(required = false) Integer limite,
                                                                   @RequestParam(required = false) String pagina) {
@@ -48,27 +45,32 @@ public class ExecucaoController {
         return resposta.body(resultado.itens());
     }
 
+    @Override
     @GetMapping("/api/v1/execucoes/{osId}")
     public ExecucaoTrabalho consultarExecucao(@PathVariable String osId) {
         return service.consultarExecucao(osId);
     }
 
+    @Override
     @PostMapping("/api/v1/execucoes/{osId}/inicio")
     public ExecucaoTrabalho iniciarExecucao(@PathVariable String osId) {
         return service.iniciarExecucao(osId);
     }
 
+    @Override
     @PostMapping("/api/v1/execucoes/{osId}/conclusao")
     public ExecucaoTrabalho concluirExecucao(@PathVariable String osId) {
         return service.concluirExecucao(osId);
     }
 
+    @Override
     @PostMapping("/api/v1/catalogo")
     public ResponseEntity<Void> salvarItem(@RequestBody ItemCatalogo item) {
         service.salvarItemCatalogo(item);
         return ResponseEntity.noContent().build();
     }
 
+    @Override
     @GetMapping("/api/v1/catalogo")
     public List<ItemCatalogo> listarCatalogo(@RequestParam(required = false) TipoItem tipo,
                                              @RequestParam(required = false) Boolean ativo,
@@ -76,11 +78,13 @@ public class ExecucaoController {
         return service.listarCatalogo(tipo, ativo, nome);
     }
 
+    @Override
     @GetMapping("/api/v1/catalogo/{tipo}/{itemId}")
     public ItemCatalogo consultarItem(@PathVariable TipoItem tipo, @PathVariable String itemId) {
         return service.consultarItemCatalogo(tipo, itemId);
     }
 
+    @Override
     @PutMapping("/api/v1/catalogo/{tipo}/{itemId}")
     public ItemCatalogo atualizarItem(@PathVariable TipoItem tipo, @PathVariable String itemId,
                                       @RequestBody AtualizarItemCatalogoRequest request) {
@@ -88,57 +92,48 @@ public class ExecucaoController {
                 request.precoUnitario(), request.ativo(), request.tempoEstimadoMinutos());
     }
 
+    @Override
     @DeleteMapping("/api/v1/catalogo/{tipo}/{itemId}")
     public ResponseEntity<Void> inativarItem(@PathVariable TipoItem tipo, @PathVariable String itemId) {
         service.inativarItemCatalogo(tipo, itemId);
         return ResponseEntity.noContent().build();
     }
 
+    @Override
     @PostMapping("/api/v1/catalogo/{tipo}/{itemId}/estoque/reposicao")
     public ItemCatalogo reporEstoque(@PathVariable TipoItem tipo, @PathVariable String itemId,
                                      @RequestBody ReporEstoqueRequest request) {
         return service.reporEstoque(tipo, itemId, request.quantidade());
     }
 
+    @Override
     @PutMapping("/api/v1/catalogo/{tipo}/{itemId}/estoque")
     public ItemCatalogo ajustarEstoque(@PathVariable TipoItem tipo, @PathVariable String itemId,
                                        @RequestBody AjustarEstoqueRequest request) {
         return service.ajustarEstoque(tipo, itemId, request.quantidadeEstoque());
     }
 
+    @Override
     @PostMapping("/api/v1/diagnosticos/{osId}/inicio")
     public Diagnostico iniciar(@PathVariable String osId) {
         return service.iniciarDiagnostico(osId);
     }
 
+    @Override
     @PutMapping("/api/v1/diagnosticos/{osId}/itens")
     public Diagnostico atualizar(@PathVariable String osId, @RequestBody AtualizarItensRequest request) {
         return service.atualizarItens(osId, request.versaoEsperada(), request.itens());
     }
 
+    @Override
     @GetMapping("/api/v1/diagnosticos/{osId}")
     public Diagnostico consultar(@PathVariable String osId) {
         return service.consultarDiagnostico(osId);
     }
 
+    @Override
     @PostMapping("/api/v1/cotacoes")
     public Cotacao cotar(@RequestBody CotacaoRequest request) {
         return service.cotar(request.itens());
-    }
-
-    public record AtualizarItemCatalogoRequest(String nome, String descricao, BigDecimal precoUnitario, Boolean ativo,
-                                               Integer tempoEstimadoMinutos) {
-    }
-
-    public record ReporEstoqueRequest(int quantidade) {
-    }
-
-    public record AjustarEstoqueRequest(Integer quantidadeEstoque) {
-    }
-
-    public record AtualizarItensRequest(long versaoEsperada, List<ItemSolicitado> itens) {
-    }
-
-    public record CotacaoRequest(List<ItemSolicitado> itens) {
     }
 }
