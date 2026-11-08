@@ -2,7 +2,7 @@
 
 Este documento descreve as métricas que o serviço expõe, como elas chegam ao New Relic e como consultá-las. O desenho segue o do `oficina_fiap` (ADR-004 daquele projeto): Micrometer expõe as métricas em formato Prometheus numa porta de gerenciamento, e o `nri-bundle` do New Relic coleta os pods do cluster.
 
-> Escopo atual: **métricas** (negócio, JVM, CPU, memória e limites do container). Traces distribuídos pelo SQS e logs JSON correlacionados ainda não foram implementados (ver [pendências](#o-que-ainda-não-está-feito)).
+> Escopo atual: **métricas** (negócio, JVM, CPU, memória e limites do container), **traces distribuídos** (OpenTelemetry, com o contexto atravessando as filas SQS e o HTTP) e **logs em JSON** correlacionados (`trace.id`, `span.id`, `os.id`, `saga.id`, `request.id`). Falta o dashboard e os alertas no New Relic (ver [pendências](#o-que-ainda-não-está-feito)).
 
 ## Como funciona
 
@@ -146,13 +146,90 @@ FROM K8sContainerSample WHERE containerName = 'execucao-service' FACET podName T
 | `SQS_METRICS_POLL_DELAY_MS` | `60000` | Intervalo entre consultas ao SQS |
 | `SQS_EXECUCAO_COMANDOS_DLQ_URL` | vazio | URL da DLQ de comandos (para as métricas) |
 | `SQS_EXECUCAO_RESULTADOS_DLQ_URL` | vazio | URL da DLQ de resultados (para as métricas) |
+| `SPRING_PROFILES_ACTIVE` | vazio | `newrelic` liga a exportação de traces para o New Relic |
+| `NEW_RELIC_LICENSE_KEY` | vazio | License key de ingestão (do secret `newrelic-license` no cluster) |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | `https://otlp.nr-data.net/v1/traces` | Endpoint OTLP dos traces no profile `newrelic` |
+| `OTEL_SERVICE_NAME`, `DEPLOYMENT_ENVIRONMENT` | `execucao-service`, `production` | Atributos do recurso nos traces |
+| `TRACING_SAMPLING_PROBABILITY` | `1.0` | Fração de traces amostrados |
 
 A consulta às filas precisa da permissão `sqs:GetQueueAttributes` nas quatro filas (a LabRole deve cobrir, mas convém confirmar com o Pedro).
 
+## Traces distribuídos
+
+O serviço usa o `spring-boot-starter-opentelemetry` (Micrometer Tracing com OpenTelemetry), como o `oficina_fiap`. Cada requisição HTTP vira um span automaticamente. O consumo e a publicação de mensagens usam a **Observation API do Micrometer**, a forma recomendada pelo Spring, que gera o span e o tempo (métrica) da mesma operação. O **contexto do trace atravessa as filas** no padrão W3C (`traceparent`):
+
+```mermaid
+sequenceDiagram
+    participant OS as OS Service
+    participant C as execucao-comandos
+    participant E as Execução Service
+    participant DB as DynamoDB (outbox)
+    participant R as execucao-resultados
+    OS->>C: AgendarExecucao + atributo traceparent
+    C->>E: span "process execucao-comandos" (continua o trace do OS)
+    E->>DB: grava o evento com o contexto do trace
+    Note over E,DB: depois, o publicador da outbox
+    E->>R: span "send execucao-resultados" + atributo traceparent
+    R->>OS: o OS continua o mesmo trace
+```
+
+| Span | Tipo | Quando | Atributos |
+| --- | --- | --- | --- |
+| `http <método> <rota>` | server | Toda chamada HTTP (automático) | rota, status |
+| `process execucao-comandos` | consumer | Para cada comando lido da fila | `messaging.*`, `messaging.message.id`, `oficina.os.id`, `oficina.saga.id` |
+| `send execucao-resultados` | producer | Para cada evento publicado pela outbox | `messaging.*`, `oficina.evento.tipo`, `oficina.os.id`, `oficina.saga.id` |
+
+Os nomes seguem a convenção atual do OpenTelemetry para mensageria (`<operação> <fila>`, com `messaging.system=aws_sqs`). Os atributos próprios do domínio têm o prefixo `oficina.`.
+
+As mesmas observações geram as métricas `execucao_mensagens_consumo_seconds` e `execucao_mensagens_publicacao_seconds` (tempo e quantidade, com a tag `error` quando falha).
+
+### Onde fica cada parte
+
+Tudo fica em `config/observability`, no mesmo padrão do `oficina_fiap`. As classes de negócio e os adaptadores não lidam com spans:
+
+| Classe | Papel |
+| --- | --- |
+| `RequestCorrelationFilter` | `X-Request-Id` e `os.id` da rota no MDC e log de cada requisição (igual ao do `oficina_fiap`) |
+| `ObservacaoMensagens` | Observações de consumo e publicação SQS, e `os.id`/`saga.id` no span e no MDC |
+| `ContextoRastreamento` | Captura o contexto do trace para a outbox e o restaura na hora de publicar |
+| `CamposCorrelacao` | Nomes dos campos de correlação nos logs |
+
+O consumidor (`AgendarExecucaoConsumer`) e o publicador (`OutboxPublisher`) só chamam `observacao.consumo(...)` e `observacao.publicacao(...)`.
+
+- **Entrada:** se o comando chega com o atributo de mensagem SQS `traceparent`, o processamento continua aquele trace. Sem ele, começa um trace novo.
+- **Outbox:** o contexto ativo no momento em que o evento é gravado (o comando ou a chamada HTTP do mecânico) fica salvo no item da outbox (`rastreamento`). Quando o publicador envia o evento, segundos depois, ele continua **o mesmo trace** e manda o `traceparent` como atributo da mensagem.
+- **Ruído evitado:** as tarefas agendadas de polling (consumidor e publicador) não geram traces (`management.observations.enable.[tasks.scheduled]=false`).
+- **Exportação:** com o profile `newrelic`, os traces vão por OTLP para `https://otlp.nr-data.net/v1/traces` com a license key (`application-newrelic.yaml`, igual ao do `oficina_fiap`). Sem o profile e sem endpoint configurado, nada é exportado.
+- **Amostragem:** `TRACING_SAMPLING_PROBABILITY` (padrão 1.0, ou seja, todos os traces).
+
+Para o trace atravessar de verdade os serviços, o **OS Service precisa enviar o atributo `traceparent` nos comandos e lê-lo nos eventos** (ver o [guia de integração](contrato-provisorio-saga.md)).
+
+## Logs
+
+Os logs saem em **JSON**, um por linha, prontos para o New Relic Logs. A configuração é a mesma do `oficina_fiap`: `logback-spring.xml` com o `logstash-logback-encoder`. Campos:
+
+| Campo | Origem |
+| --- | --- |
+| `@timestamp`, `level`, `thread`, `logger`, `message`, `stack_trace` | Padrão |
+| `service.name` | `execucao-service` |
+| `trace.id`, `span.id` | Trace ativo (é o que liga o log ao trace no New Relic). Omitidos quando não há trace |
+| `os.id`, `saga.id` | Do comando processado, do evento publicado ou da rota HTTP |
+| `request.id` | Cabeçalho `X-Request-Id` (gerado se não vier), devolvido na resposta |
+
+Cada requisição da API gera uma linha `Requisição HTTP concluída method=... path=... status=... durationMs=...`.
+
+Exemplo real:
+
+```json
+{"@timestamp":"2026-11-08T12:41:26.500-03:00","level":"INFO","thread":"http-nio-8080-exec-1",
+ "logger":"...RequestCorrelationFilter","message":"Requisição HTTP concluída method=POST path=/api/v1/execucoes/trace-1794152424/inicio status=200 durationMs=33",
+ "os.id":"trace-1794152424","request.id":"b4de8451-e318-4ae8-8ce1-01e29f89a51f","service.name":"execucao-service",
+ "trace.id":"fc6dd62d7cf940b0aa8cab303218b03c","span.id":"dfb3faa68b030bba"}
+```
+
 ## O que ainda não está feito
 
-- **Traces distribuídos** (OpenTelemetry) com o contexto atravessando as mensagens do SQS. O `ConfigMap` do deploy já tem variáveis `OTEL_*`, mas o serviço ainda não tem a dependência nem exporta traces.
-- **Logs JSON** com `trace.id`, `span.id` e `sagaId`/`osId` nos campos, como no `oficina_fiap`.
+- **License key do New Relic no GitHub**: o deploy cria o secret `newrelic-license` e liga o profile `newrelic` só quando o secret `NEW_RELIC_LICENSE_KEY` existe no repositório. Sem ele, o serviço sobe normalmente, mas não exporta traces.
 - **Dashboard e alertas** no New Relic, com as consultas acima como base.
 - **Confirmar com o Pedro** que o `nri-bundle` está instalado no cluster e que o `nri-prometheus` enxerga o namespace `oficina-ms` (hoje o `scrape_endpoints: true` do `oficina_fiap` foi validado só para o namespace `of-fiap`).
 - **Variáveis de SQS no ConfigMap** do deploy (`SQS_*`, `SQS_METRICS_ENABLED`), que dependem das URLs das filas.

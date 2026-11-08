@@ -1,5 +1,6 @@
 package br.com.fiap.soat15.execucaoservice.adapter.out.dynamodb;
 
+import br.com.fiap.soat15.execucaoservice.config.observability.ContextoRastreamento;
 import br.com.fiap.soat15.execucaoservice.application.ItemCatalogoNaoEncontradoException;
 import br.com.fiap.soat15.execucaoservice.domain.model.AtualizacaoItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
@@ -28,7 +29,8 @@ import static org.mockito.Mockito.when;
 
 class DynamoCatalogoRepositoryTest {
     private final DynamoDbClient dynamo = mock(DynamoDbClient.class);
-    private final DynamoExecucaoRepository repository = new DynamoExecucaoRepository(dynamo, "execucao_service");
+    private final DynamoExecucaoRepository repository = new DynamoExecucaoRepository(dynamo, "execucao_service",
+            ContextoRastreamento.desligado());
 
     private static AttributeValue s(String valor) { return AttributeValue.builder().s(valor).build(); }
     private static AttributeValue n(String valor) { return AttributeValue.builder().n(valor).build(); }

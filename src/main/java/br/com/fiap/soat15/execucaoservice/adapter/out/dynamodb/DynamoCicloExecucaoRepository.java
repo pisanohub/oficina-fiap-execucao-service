@@ -8,6 +8,7 @@ import br.com.fiap.soat15.execucaoservice.domain.model.PaginaExecucoes;
 import br.com.fiap.soat15.execucaoservice.domain.model.StatusExecucao;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoEventoExecucao;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
+import br.com.fiap.soat15.execucaoservice.config.observability.ContextoRastreamento;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.ConditionCheck;
@@ -28,8 +29,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 final class DynamoCicloExecucaoRepository extends DynamoRepositorySupport {
-    DynamoCicloExecucaoRepository(DynamoDbClient dynamo, String tableName) {
+    private final ContextoRastreamento rastreamento;
+
+    DynamoCicloExecucaoRepository(DynamoDbClient dynamo, String tableName, ContextoRastreamento rastreamento) {
         super(dynamo, tableName);
+        this.rastreamento = rastreamento;
     }
 
     public void cancelarExecucao(CancelarExecucaoCommand comando, Instant agora) {
@@ -242,6 +246,7 @@ final class DynamoCicloExecucaoRepository extends DynamoRepositorySupport {
         evento.put("versaoOrcamento", execucao.get("versaoOrcamento"));
         evento.put("pagamentoId", execucao.get("pagamentoId"));
         evento.put("published", AttributeValue.builder().bool(false).build());
+        anexarRastreamento(evento, rastreamento.capturar());
         return evento;
     }
 

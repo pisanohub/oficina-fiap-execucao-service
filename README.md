@@ -55,6 +55,9 @@ Variaveis de ambiente configuraveis (ver `src/main/resources/application.yaml`):
 | `SQS_METRICS_POLL_DELAY_MS` | `60000` | Intervalo entre as consultas de métricas ao SQS |
 | `SQS_EXECUCAO_COMANDOS_DLQ_URL` | vazio | URL da DLQ de comandos (só para métricas) |
 | `SQS_EXECUCAO_RESULTADOS_DLQ_URL` | vazio | URL da DLQ de resultados (só para métricas) |
+| `SPRING_PROFILES_ACTIVE` | vazio | `newrelic` exporta os traces para o New Relic (requer `NEW_RELIC_LICENSE_KEY`) |
+| `NEW_RELIC_LICENSE_KEY` | vazio | License key de ingestão do New Relic |
+| `TRACING_SAMPLING_PROBABILITY` | `1.0` | Fração de traces amostrados |
 | `OUTBOX_PUBLISHER_ENABLED` | `false` | Ativa o publicador após configurar a fila |
 | `OUTBOX_POLL_DELAY_MS` | `5000` | Intervalo entre buscas na outbox |
 
@@ -65,7 +68,8 @@ Health check: `GET :8081/actuator/health`. Métricas Prometheus: `GET :8081/actu
 - [Fluxo de negócio: quem chama o quê e o que muda cada status](docs/fluxo-de-negocio.md)
 - [Como o serviço funciona: endpoints, consumo e publicação de mensagens](docs/funcionamento-do-servico.md)
 - [Observabilidade: métricas de negócio, pod, CPU e limites](docs/observabilidade.md)
-- [Collection do Postman com o fluxo completo](docs/execucao-service.postman_collection.json)- [Arquitetura do Execução Service e configuração das DLQs](docs/arquitetura-execucao.md)
+- [Collection do Postman com o fluxo completo](docs/execucao-service.postman_collection.json)
+- [Arquitetura do Execução Service e configuração das DLQs](docs/arquitetura-execucao.md)
 - [Guia de integração para OS Service e Billing: filas, mensagens, campos e HTTP](docs/contrato-provisorio-saga.md)
 
 ## Qualidade: cobertura e Sonar
@@ -74,11 +78,11 @@ Health check: `GET :8081/actuator/health`. Métricas Prometheus: `GET :8081/actu
 
 O JaCoCo mede a cobertura e o build (`./mvnw clean verify`) **falha se a cobertura de linhas ficar abaixo de 80%** (`jacoco.minimum.coverage` no `pom.xml`). O relatório HTML fica em `target/site/jacoco/index.html`.
 
-| Medida (03/11/2026) | Valor |
+| Medida (08/11/2026) | Valor |
 | --- | --- |
-| Testes automatizados (unitários + 4 cenários BDD) | 130 |
-| Cobertura de linhas (JaCoCo, usada no gate) | 93,4% |
-| Cobertura de instruções (JaCoCo) | 93,3% |
+| Testes automatizados (unitários + 5 cenários BDD) | 151 |
+| Cobertura de linhas (JaCoCo, usada no gate) | 94,1% |
+| Cobertura de instruções (JaCoCo) | 93,8% |
 | Cobertura segundo o Sonar (linhas + branches) | [painel no SonarCloud](https://sonarcloud.io/project/overview?id=pisanohub_oficina-fiap-execucao-service) |
 
 ### Testes BDD (Cucumber)
@@ -89,6 +93,7 @@ O fluxo completo do serviço está descrito em português, no formato Gherkin, e
 2. **Agendamento rejeitado** por falta de estoque (`ExecucaoRejeitada`, sem execução criada e sem mexer no estoque).
 3. **Cancelamento antes do início**, que devolve as peças ao estoque (`ExecucaoCancelada`).
 4. **Cancelamento recusado** depois que o trabalho começou (`CancelamentoExecucaoRecusado`).
+5. **Rastreamento:** o `traceparent` do comando atravessa o consumo, a chamada HTTP do mecânico e os eventos publicados, todos no mesmo trace.
 
 Os passos (`src/test/java/.../bdd`) não usam dublês: o teste sobe o **DynamoDB Local e o ElasticMQ em containers** (Testcontainers), inicia a aplicação inteira com o consumidor e o publicador ligados e conversa com ela como o OS Service e o mecânico fariam, por mensagens no SQS e chamadas HTTP.
 
@@ -124,11 +129,11 @@ O serviço está funcional e coberto por testes. Resumo do que existe na `main`:
 - **API HTTP** (`/api/v1`): catálogo e estoque (listar, consultar, atualizar, inativar, repor e ajustar), diagnóstico com controle de versão, cotação de preços e fila de trabalho (listar com paginação, consultar, iniciar e concluir).
 - **Mensageria**: consumo de `AgendarExecucao` e `CancelarExecucao` e publicação dos resultados via outbox, ambos ligados por configuração (`SQS_CONSUMER_ENABLED` e `OUTBOX_PUBLISHER_ENABLED`).
 - **Persistência**: DynamoDB, com agendamento, deduplicação e outbox numa única transação.
-- **Observabilidade**: métricas de negócio, filas e limites do container expostas em Prometheus (porta 8081).
-- **Qualidade**: 126 testes, cobertura de 80% e análise do Sonar barrando o CI.
+- **Observabilidade**: métricas de negócio, filas e limites do container em Prometheus (porta 8081), traces OpenTelemetry com o contexto atravessando o SQS e logs em JSON correlacionados (`trace.id`, `os.id`, `saga.id`).
+- **Qualidade**: 151 testes, cobertura de 80% e análise do Sonar barrando o CI.
 
 Próximas etapas do serviço:
 
 - Alinhar com o grupo os contratos e a orquestração do cancelamento e do estorno.
 - Autenticação e autorização para operadores e serviços nas rotas `/api/v1`.
-- Variáveis de SQS no deploy, BDD (fluxo ponta a ponta), traces distribuídos e dashboard no New Relic.
+- Variáveis de SQS no deploy, dashboard e alertas no New Relic.

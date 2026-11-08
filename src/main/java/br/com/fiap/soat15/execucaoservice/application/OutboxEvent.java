@@ -10,12 +10,19 @@ import java.util.UUID;
 
 public record OutboxEvent(String operationId, String type, String sagaId, String osId,
                           String causationId, Instant occurredAt, String orcamentoId,
-                          int versaoOrcamento, String pagamentoId, String motivo, String itemId, Instant iniciadaEm) {
+                          int versaoOrcamento, String pagamentoId, String motivo, String itemId, Instant iniciadaEm,
+                          Map<String, String> rastreamento) {
+    public OutboxEvent {
+        rastreamento = rastreamento == null ? Map.of() : Map.copyOf(rastreamento);
+    }
+
     public OutboxEvent(String operationId, String type, String sagaId, String osId,
                        String causationId, Instant occurredAt, String orcamentoId,
                        int versaoOrcamento, String pagamentoId) {
-        this(operationId, type, sagaId, osId, causationId, occurredAt, orcamentoId, versaoOrcamento, pagamentoId, null, null, null);
+        this(operationId, type, sagaId, osId, causationId, occurredAt, orcamentoId, versaoOrcamento, pagamentoId, null, null, null,
+                Map.of());
     }
+
     public Map<String, Object> mensagem() {
         String messageId = UUID.nameUUIDFromBytes((type + ":" + operationId)
                 .getBytes(StandardCharsets.UTF_8)).toString();

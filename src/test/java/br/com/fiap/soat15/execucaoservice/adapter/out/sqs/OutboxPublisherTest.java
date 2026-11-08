@@ -3,6 +3,8 @@ package br.com.fiap.soat15.execucaoservice.adapter.out.sqs;
 import br.com.fiap.soat15.execucaoservice.application.ExecucaoMetricas;
 import br.com.fiap.soat15.execucaoservice.application.OutboxEvent;
 import br.com.fiap.soat15.execucaoservice.application.OutboxRepository;
+import br.com.fiap.soat15.execucaoservice.config.observability.ObservacaoMensagens;
+import br.com.fiap.soat15.execucaoservice.config.observability.RastreamentoDeTeste;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -32,7 +34,8 @@ class OutboxPublisherTest {
     private final OutboxEvent evento = new OutboxEvent("op-123", "ExecucaoAgendada", "saga-123", "123",
             "causa-123", agora, "orc-123", 2, "pag-123");
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
-    private final OutboxPublisher publisher = new OutboxPublisher(repository, new ExecucaoMetricas(registry), sqs,
+    private final OutboxPublisher publisher = new OutboxPublisher(repository, new ExecucaoMetricas(registry),
+            ObservacaoMensagens.desligada(), sqs,
             Clock.fixed(agora, ZoneOffset.UTC), "http://localhost:9324/queue/execucao-resultados");
 
     @Test
@@ -104,5 +107,36 @@ class OutboxPublisherTest {
         when(repository.pendentes(20)).thenReturn(List.of());
         publisher.publicarPendentes();
         assertThat(registry.get("oficina.execucao.outbox.atraso").gauge().value()).isZero();
+    }
+
+    @Test
+    void enviaOTraceDaOperacaoComoAtributoDaMensagem() {
+        var publicador = new OutboxPublisher(repository, new ExecucaoMetricas(registry), new RastreamentoDeTeste().observacao(), sqs,
+                Clock.fixed(agora, ZoneOffset.UTC), "http://localhost:9324/queue/execucao-resultados");
+        OutboxEvent comTrace = new OutboxEvent("op-9", "ExecucaoAgendada", "saga-9", "9", "c", agora, "o", 1, "p",
+                null, null, null, java.util.Map.of("traceparent", RastreamentoDeTeste.TRACEPARENT));
+        when(repository.pendentes(20)).thenReturn(List.of(comTrace));
+        when(repository.reservar(eq(comTrace), any(), eq(agora), any())).thenReturn(true);
+        when(sqs.sendMessage(any(SendMessageRequest.class))).thenReturn(SendMessageResponse.builder().messageId("m").build());
+
+        publicador.publicarPendentes();
+
+        ArgumentCaptor<SendMessageRequest> captor = ArgumentCaptor.forClass(SendMessageRequest.class);
+        verify(sqs).sendMessage(captor.capture());
+        String enviado = captor.getValue().messageAttributes().get("traceparent").stringValue();
+        assertThat(enviado).startsWith("00-" + RastreamentoDeTeste.TRACE_ID + "-").doesNotContain(RastreamentoDeTeste.SPAN_PAI);
+    }
+
+    @Test
+    void semRastreamentoNaoEnviaAtributos() {
+        when(repository.pendentes(20)).thenReturn(List.of(evento));
+        when(repository.reservar(eq(evento), any(), eq(agora), any())).thenReturn(true);
+        when(sqs.sendMessage(any(SendMessageRequest.class))).thenReturn(SendMessageResponse.builder().messageId("m").build());
+
+        publisher.publicarPendentes();
+
+        ArgumentCaptor<SendMessageRequest> captor = ArgumentCaptor.forClass(SendMessageRequest.class);
+        verify(sqs).sendMessage(captor.capture());
+        assertThat(captor.getValue().messageAttributes()).isEmpty();
     }
 }

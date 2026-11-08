@@ -7,6 +7,7 @@ import software.amazon.awssdk.services.dynamodb.model.Put;
 import software.amazon.awssdk.services.dynamodb.model.TransactWriteItem;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
 
+import java.util.HashMap;
 import java.util.Map;
 
 abstract class DynamoRepositorySupport {
@@ -16,6 +17,14 @@ abstract class DynamoRepositorySupport {
     protected DynamoRepositorySupport(DynamoDbClient dynamo, String tableName) {
         this.dynamo = dynamo;
         this.tableName = tableName;
+    }
+
+    protected void anexarRastreamento(Map<String, AttributeValue> eventoOutbox, Map<String, String> contexto) {
+        if (!contexto.isEmpty()) {
+            Map<String, AttributeValue> valores = new HashMap<>();
+            contexto.forEach((chave, valor) -> valores.put(chave, texto(valor)));
+            eventoOutbox.put("rastreamento", AttributeValue.builder().m(valores).build());
+        }
     }
 
     protected Map<String, AttributeValue> buscar(Map<String, AttributeValue> chave) {

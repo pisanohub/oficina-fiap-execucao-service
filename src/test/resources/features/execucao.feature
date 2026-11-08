@@ -43,3 +43,11 @@ Funcionalidade: Execução de uma ordem de serviço
     Então o evento "CancelamentoExecucaoRecusado" é publicado com o motivo "ESTADO_NAO_PERMITE_CANCELAMENTO"
     E a execução continua "EM_EXECUCAO"
     E o estoque de "vela" continua 9
+
+  Cenário: O rastreamento atravessa as filas e o HTTP
+    Dado que a peça "amortecedor" tem 5 unidades em estoque
+    E o OS Service está no trace "4bf92f3577b34da6a3ce929d0e0e4736"
+    Quando o OS Service envia AgendarExecucao com 1 unidades de "amortecedor"
+    Então o evento "ExecucaoAgendada" é publicado no mesmo trace
+    Quando o mecânico inicia a execução no mesmo trace
+    Então o evento "ExecucaoIniciada" é publicado no mesmo trace

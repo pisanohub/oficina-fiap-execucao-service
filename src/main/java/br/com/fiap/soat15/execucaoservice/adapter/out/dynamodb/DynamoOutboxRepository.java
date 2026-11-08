@@ -13,6 +13,7 @@ import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -83,7 +84,17 @@ public class DynamoOutboxRepository implements OutboxRepository {
                 Integer.parseInt(item.get("versaoOrcamento").n()), item.get("pagamentoId").s(),
                 item.containsKey("motivo") ? item.get("motivo").s() : null,
                 item.containsKey("itemId") ? item.get("itemId").s() : null,
-                item.containsKey("iniciadaEm") ? Instant.parse(item.get("iniciadaEm").s()) : null);
+                item.containsKey("iniciadaEm") ? Instant.parse(item.get("iniciadaEm").s()) : null,
+                rastreamento(item));
+    }
+
+    private Map<String, String> rastreamento(Map<String, AttributeValue> item) {
+        if (!item.containsKey("rastreamento") || !item.get("rastreamento").hasM()) {
+            return Map.of();
+        }
+        Map<String, String> contexto = new HashMap<>();
+        item.get("rastreamento").m().forEach((chave, valor) -> contexto.put(chave, valor.s()));
+        return contexto;
     }
 
     private Map<String, AttributeValue> chave(OutboxEvent evento) {

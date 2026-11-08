@@ -1,5 +1,6 @@
 package br.com.fiap.soat15.execucaoservice.adapter.out.dynamodb;
 
+import br.com.fiap.soat15.execucaoservice.config.observability.ContextoRastreamento;
 import br.com.fiap.soat15.execucaoservice.domain.model.PaginaExecucoes;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -23,7 +24,8 @@ import static org.mockito.Mockito.when;
 
 class DynamoExecucaoPaginacaoTest {
     private final DynamoDbClient dynamo = mock(DynamoDbClient.class);
-    private final DynamoExecucaoRepository repository = new DynamoExecucaoRepository(dynamo, "execucao_service");
+    private final DynamoExecucaoRepository repository = new DynamoExecucaoRepository(dynamo, "execucao_service",
+            ContextoRastreamento.desligado());
 
     private static AttributeValue s(String valor) { return AttributeValue.builder().s(valor).build(); }
 

@@ -11,6 +11,7 @@ import br.com.fiap.soat15.execucaoservice.domain.model.ItemCatalogo;
 import br.com.fiap.soat15.execucaoservice.domain.model.ItemSolicitado;
 import br.com.fiap.soat15.execucaoservice.domain.model.PaginaExecucoes;
 import br.com.fiap.soat15.execucaoservice.domain.model.TipoItem;
+import br.com.fiap.soat15.execucaoservice.config.observability.ContextoRastreamento;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -25,9 +26,10 @@ public class DynamoExecucaoRepository implements ExecucaoRepository {
     private final DynamoDiagnosticoRepository diagnosticos;
     private final DynamoCatalogoRepository catalogo;
 
-    public DynamoExecucaoRepository(DynamoDbClient dynamo, @Value("${dynamodb.table-name}") String tableName) {
-        this.agendamentos = new DynamoAgendamentoRepository(dynamo, tableName);
-        this.ciclo = new DynamoCicloExecucaoRepository(dynamo, tableName);
+    public DynamoExecucaoRepository(DynamoDbClient dynamo, @Value("${dynamodb.table-name}") String tableName,
+                                    ContextoRastreamento rastreamento) {
+        this.agendamentos = new DynamoAgendamentoRepository(dynamo, tableName, rastreamento);
+        this.ciclo = new DynamoCicloExecucaoRepository(dynamo, tableName, rastreamento);
         this.diagnosticos = new DynamoDiagnosticoRepository(dynamo, tableName);
         this.catalogo = new DynamoCatalogoRepository(dynamo, tableName);
     }

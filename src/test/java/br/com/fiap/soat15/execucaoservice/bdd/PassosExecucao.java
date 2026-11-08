@@ -3,6 +3,7 @@ package br.com.fiap.soat15.execucaoservice.bdd;
 import io.cucumber.java.pt.Dado;
 import io.cucumber.java.pt.Então;
 import io.cucumber.java.pt.Quando;
+import software.amazon.awssdk.services.sqs.model.MessageAttributeValue;
 import software.amazon.awssdk.services.sqs.model.ReceiveMessageRequest;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -25,11 +26,13 @@ public class PassosExecucao {
     private static final AtomicInteger SEQUENCIA = new AtomicInteger();
     private static final List<Map<String, Object>> EVENTOS = new CopyOnWriteArrayList<>();
     private static final Duration LIMITE = Duration.ofSeconds(30);
+    private static final String ATRIBUTO_TRACEPARENT = "_traceparent";
 
     private final AmbienteBdd ambiente = AmbienteBdd.obter();
     private final HttpClient http = HttpClient.newHttpClient();
     private final JsonMapper mapper = JsonMapper.builder().build();
     private final String osId = "bdd-" + SEQUENCIA.incrementAndGet() + "-" + System.currentTimeMillis();
+    private String traceId;
 
     @Dado("que a peça {string} tem {int} unidades em estoque")
     public void pecaComEstoque(String peca, int unidades) throws Exception {
@@ -59,6 +62,29 @@ public class PassosExecucao {
     @Quando("o mecânico inicia a execução")
     public void iniciar() throws Exception {
         assertThat(chamar("POST", "/api/v1/execucoes/" + osId + "/inicio", null).statusCode()).isEqualTo(200);
+    }
+
+    @Dado("o OS Service está no trace {string}")
+    public void noTrace(String traceId) {
+        this.traceId = traceId;
+    }
+
+    @Quando("o mecânico inicia a execução no mesmo trace")
+    public void iniciarNoMesmoTrace() throws Exception {
+        HttpRequest requisicao = HttpRequest.newBuilder(URI.create(ambiente.urlApi() + "/api/v1/execucoes/" + osId + "/inicio"))
+                .header("traceparent", traceparent()).POST(HttpRequest.BodyPublishers.noBody()).build();
+        assertThat(http.send(requisicao, HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(200);
+    }
+
+    @Então("o evento {string} é publicado no mesmo trace")
+    public void eventoNoMesmoTrace(String tipo) {
+        Map<String, Object> evento = aguardarEvento(tipo);
+        assertThat((String) evento.get(ATRIBUTO_TRACEPARENT)).startsWith("00-" + traceId + "-");
+    }
+
+    private String traceparent() {
+        String span = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        return "00-" + traceId + "-" + span + "-01";
     }
 
     @Quando("o mecânico conclui a execução")
@@ -110,7 +136,9 @@ public class PassosExecucao {
     }
 
     private void enviarComando(String corpo) {
-        ambiente.sqs().sendMessage(b -> b.queueUrl(ambiente.urlComandos()).messageBody(corpo));
+        Map<String, MessageAttributeValue> atributos = traceId == null ? Map.of()
+                : Map.of("traceparent", MessageAttributeValue.builder().dataType("String").stringValue(traceparent()).build());
+        ambiente.sqs().sendMessage(b -> b.queueUrl(ambiente.urlComandos()).messageBody(corpo).messageAttributes(atributos));
     }
 
     private String statusDaExecucao() throws Exception {
@@ -151,9 +179,15 @@ public class PassosExecucao {
     @SuppressWarnings("unchecked")
     private void lerFilaDeResultados() {
         var mensagens = ambiente.sqs().receiveMessage(ReceiveMessageRequest.builder()
-                .queueUrl(ambiente.urlResultados()).maxNumberOfMessages(10).waitTimeSeconds(1).build()).messages();
+                .queueUrl(ambiente.urlResultados()).maxNumberOfMessages(10).waitTimeSeconds(1)
+                .messageAttributeNames("All").build()).messages();
         for (var mensagem : mensagens) {
-            EVENTOS.add(mapper.readValue(mensagem.body(), Map.class));
+            Map<String, Object> evento = new java.util.HashMap<>(mapper.readValue(mensagem.body(), Map.class));
+            var traceparent = mensagem.messageAttributes().get("traceparent");
+            if (traceparent != null) {
+                evento.put(ATRIBUTO_TRACEPARENT, traceparent.stringValue());
+            }
+            EVENTOS.add(evento);
             ambiente.sqs().deleteMessage(b -> b.queueUrl(ambiente.urlResultados()).receiptHandle(mensagem.receiptHandle()));
         }
     }

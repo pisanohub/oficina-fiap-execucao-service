@@ -1,0 +1,12 @@
+management:
+  opentelemetry:
+    resource-attributes:
+      service.name: ${OTEL_SERVICE_NAME:execucao-service}
+      deployment.environment: ${DEPLOYMENT_ENVIRONMENT:production}
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:https://otlp.nr-data.net/v1/traces}
+          headers:
+            api-key: ${NEW_RELIC_LICENSE_KEY}
+          transport: http
