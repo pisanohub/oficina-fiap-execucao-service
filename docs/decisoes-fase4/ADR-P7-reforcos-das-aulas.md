@@ -43,10 +43,10 @@ O timeout limita a espera de cada chamada, mas continua mandando requisições p
 - O bloqueio pessimista serializa operações no mesmo orçamento (aceitável pelo volume da oficina).
 - O Circuit Breaker precisa de uma resposta alternativa (fallback) definida para cada chamada.
 
-## Situação em 08/11/2026
+## Situação em 16/11/2026
 
 | Serviço | Situação |
 | --- | --- |
-| **Billing** | Isolamento implementado: o orçamento é lido com `PESSIMISTIC_WRITE` (`SpringDataOrcamentoRepository`). O Resilience4j está nas dependências; o Circuit Breaker nas chamadas ao Mercado Pago ainda precisa ser confirmado pelo Gabriel Ramos. |
-| **OS** | Resilience4j previsto no README para as chamadas síncronas (por exemplo, consulta ao catálogo do Execução). Em desenvolvimento. |
+| **Billing** | Isolamento implementado: o orçamento é lido com `PESSIMISTIC_WRITE` (`SpringDataOrcamentoRepository`). O Resilience4j está nas dependências do serviço. |
+| **OS** | O Resilience4j está nas dependências do serviço, para as chamadas síncronas (consulta ao catálogo do Execução). |
 | **Execução** | **Não se aplica.** O Execução não faz nenhuma chamada síncrona a outro serviço: só recebe HTTP e conversa com os demais pelo SQS. Por isso o Resilience4j foi **retirado** do serviço (PR #19), em vez de ficar como dependência sem uso. A proteção do Execução contra falhas está no consumo do SQS: entrega reprocessável, idempotência por `operationId`, DLQ após 5 tentativas e outbox. |

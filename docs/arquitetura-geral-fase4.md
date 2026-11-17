@@ -2,7 +2,7 @@
 
 Visão da solução inteira: os três microsserviços, os bancos de cada um e como eles se comunicam. As decisões por trás deste desenho estão nos [ADRs da Fase 4](decisoes-fase4/README.md).
 
-Atualizado em 08/11/2026, com o que já está implementado e o que ainda está previsto (indicado em cada ponto).
+Atualizado em 16/11/2026.
 
 > Cópia do documento do repositório do grupo ([`oficina_fiap/documentacao/arquitetura-geral-fase4.md`](https://github.com/pisanohub/oficina_fiap/blob/main/documentacao/arquitetura-geral-fase4.md)), que é a fonte principal.
 
@@ -23,8 +23,6 @@ flowchart TB
     end
 
     GW -->|REST /api| OS
-    GW -.->|rotas a definir| EX
-    GW -.->|rotas a definir| BI
     OS -->|catálogo e preços| EX
     BI <-->|checkout, consulta, webhook| MP
 
@@ -78,14 +76,13 @@ Como o SQS Standard pode entregar a mesma mensagem mais de uma vez, os consumido
 
 ### Síncrona: REST
 
-| Quem chama | Destino | Para quê | Situação |
-| --- | --- | --- | --- |
-| Cliente e operador | API Gateway → OS | Abrir e consultar ordens | Rota da Fase 3; ajuste para o OS novo em andamento |
-| Operador | API Gateway → Execução | Diagnóstico, catálogo, estoque, iniciar e concluir o reparo | Rota a definir |
-| Cliente | API Gateway → Billing | Consultar orçamento e pagamento | Rota a definir |
-| OS | Execução | Consultar catálogo e preços ao montar a OS (snapshot do preço) | Contrato publicado pelo Execução |
-| Billing | Mercado Pago | Checkout, consulta do pagamento e estorno | Implementado no Billing |
-| Mercado Pago | Billing | Webhook de notificação do pagamento | Implementado no Billing |
+| Quem chama | Destino | Para quê |
+| --- | --- | --- |
+| Cliente e operador | API Gateway → OS | Abrir e consultar ordens, aprovar o orçamento, confirmar a entrega |
+| Operador | Execução | Diagnóstico, catálogo, estoque, iniciar e concluir o reparo |
+| OS | Execução | Consultar catálogo e preços ao montar a OS (snapshot do preço) |
+| Billing | Mercado Pago | Checkout, consulta do pagamento e estorno |
+| Mercado Pago | Billing | Webhook de notificação do pagamento |
 
 O Billing **não** chama o Execução: o preço vem no comando do OS (ADR-P4). As chamadas síncronas entre serviços usam Circuit Breaker onde existem (ADR-P7).
 

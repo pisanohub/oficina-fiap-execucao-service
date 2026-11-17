@@ -1,6 +1,6 @@
 # Fluxo de negócio: da abertura da OS à conclusão
 
-Este documento explica o **negócio** por trás do Execução Service: quem faz o quê em cada etapa de uma Ordem de Serviço, qual endpoint ou mensagem muda cada status e o que acontece quando algo dá errado. Para os campos exatos das mensagens, veja o [guia de integração](contrato-provisorio-saga.md); para a parte técnica, veja [funcionamento-do-servico.md](funcionamento-do-servico.md).
+Este documento explica o **negócio** por trás do Execução Service: quem faz o quê em cada etapa de uma Ordem de Serviço, qual endpoint ou mensagem muda cada status e o que acontece quando algo dá errado. Para os campos exatos das mensagens, veja o [guia de integração](guia-de-integracao-saga.md); para a parte técnica, veja [funcionamento-do-servico.md](funcionamento-do-servico.md).
 > Fronteira importante: o Execução Service só conhece o **estado do diagnóstico** e o **estado da execução**. O estado da **OS** (aguardando aprovação, concluída, entregue...) pertence ao OS Service. Quando este documento cita o status da OS, é a visão do fluxo geral da Saga, e a decisão é do OS Service.
 
 ---
@@ -196,5 +196,5 @@ Os cenários acima foram executados em 02/11/2026 em ambiente local (DynamoDB Lo
 Pontos que o teste revelou:
 
 - **Ordem dos eventos:** na leitura da fila os eventos não saem na ordem em que foram gerados (por exemplo, `ExecucaoConcluida` apareceu depois de `ExecucaoIniciada`, em leituras separadas, e `CancelamentoExecucaoRecusado` antes de `ExecucaoIniciada`). Confirma que o OS não pode depender de ordem.
-- **O diagnóstico não é travado após o agendamento:** com a OS 201 já concluída, o `PUT` de itens ainda retornou `200` (versão 3). Isso não altera a execução já criada, mas faz o diagnóstico divergir do orçamento aprovado. É uma decisão de negócio a discutir: bloquear a edição após o agendamento, ou aceitar e deixar o OS detectar pela `versao`.
-- **Execução inexistente no cancelamento** termina na DLQ, sem resposta ao OS. Continua como ponto em aberto com o Gabriel Souza.
+- **O diagnóstico não é travado após o agendamento:** com a OS 201 já concluída, o `PUT` de itens ainda retornou `200` (versão 3). Isso não altera a execução já criada, mas faz o diagnóstico divergir do orçamento aprovado. O OS pode detectar a mudança pela `versao` do diagnóstico.
+- **Execução inexistente no cancelamento** termina na DLQ, sem resposta ao OS.

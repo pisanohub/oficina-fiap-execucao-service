@@ -24,7 +24,7 @@ Dividir a solução em três serviços, seguindo os exemplos do enunciado:
 Decisões tomadas junto, no kickoff:
 
 - **Catálogo e estoque ficam no Execução**, porque é quem consome as peças e consulta o catálogo no dia a dia. O OS e o Billing usam o catálogo por contrato (HTTP ou dados embutidos nos comandos), nunca pelo banco.
-- **A porta de entrada continua a da Fase 3**: API Gateway com a Lambda de autenticação (RFC-001/002). A rota nova a definir é API Gateway → OS Service.
+- **A porta de entrada continua a da Fase 3**: API Gateway com a Lambda de autenticação (RFC-001/002). O API Gateway encaminha as rotas protegidas para o OS Service.
 - **Não há quarto serviço só para o orquestrador**: a Saga fica dentro do OS (ADR-P4).
 
 ## Alternativas consideradas
@@ -55,8 +55,9 @@ Não atende ao requisito de banco e deploy independentes por serviço e acopla t
 - Consistência eventual entre os serviços: o status da OS só muda quando o evento do participante chega.
 - Mais repositórios e pipelines para manter (mitigado pelo template de pipeline do Pedro).
 
-## Situação em 08/11/2026
+## Situação em 16/11/2026
 
 - Os três repositórios existem, com `deploy.yml`, Dockerfile e manifestos Kubernetes. Os três fizeram deploy com sucesso no cluster em 02/11/2026.
 - O Execução Service está completo: catálogo, estoque, diagnóstico, cotação, fila de trabalho, consumo de `AgendarExecucao`/`CancelarExecucao` e publicação dos resultados por outbox.
-- O Billing tem orçamento, checkout do Mercado Pago e webhook. O OS e a integração por SQS entre os três seguem em desenvolvimento.
+- O Billing tem orçamento, checkout do Mercado Pago, webhook e a troca de mensagens SQS do orçamento e do pagamento.
+- O OS tem o ciclo da ordem de serviço e o orquestrador da Saga, que envia os comandos e trata os eventos do Billing e do Execução.
