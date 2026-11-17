@@ -44,12 +44,12 @@ Daria autonomia aos donos, mas deixaria o código, os pipelines e o monitorament
 - O rastreamento por SQS não vem pronto: cada serviço precisa enviar e ler o contexto do trace (`traceparent`) nos atributos das mensagens.
 - A porta de entrada da Fase 3 apontava para um único backend. As rotas para os três serviços e a autenticação entre serviços precisam ser redesenhadas.
 
-## Situação em 08/11/2026
+## Situação em 16/11/2026
 
 | Item | Situação |
 | --- | --- |
-| Camadas `domain`/`application`/`adapter` | Seguidas no Execução e no Billing. |
-| Observabilidade | Execução: métricas de negócio, filas e limites do container (Prometheus), traces OpenTelemetry com o contexto atravessando o SQS, e logs em JSON correlacionados no mesmo padrão do `oficina_fiap`. **Falta:** instalar o `nri-bundle` no cluster (fica com o Guilherme, conforme o checklist de infra), cadastrar a license key nos repositórios, dashboard e alertas, e o OS e o Billing propagarem o `traceparent`. |
+| Camadas `domain`/`application`/`adapter` | Seguidas nos três serviços. |
+| Observabilidade | Execução: métricas de negócio, filas e limites do container (Prometheus), traces OpenTelemetry com o contexto atravessando o SQS, e logs em JSON correlacionados no mesmo padrão do `oficina_fiap`. License key cadastrada no repositório do Execução; workflow manual `newrelic.yml` para instalar o `nri-bundle` no cluster; dashboard e 11 alertas definidos como código e criados no New Relic por script. |
 | Terraform e S3 | Filas SQS no `oficina-fiap-infra-k8s`, RDS no `oficina-fiap-infra-database`, tabela DynamoDB criada pelo Pedro. |
-| Branch protection | Pendente nos três repositórios de serviço (check `build-test` obrigatório). |
-| API Gateway e Lambda | Pendente: rotas para os serviços novos e autenticação entre serviços. |
+| Branch protection | Confirmada em 15/11/2026 nos três repositórios de serviço, com o check `build-test` obrigatório. |
+| API Gateway e Lambda | Reaproveitados da Fase 3 como porta de entrada: autenticação por CPF, JWT e Lambda Authorizer. |

@@ -89,7 +89,7 @@ Detalhes (estados, chaves do DynamoDB, outbox e filas) em [docs/arquitetura-exec
 - **DLQ:** mensagens inválidas vão para a DLQ em segundos; falhas temporárias são tentadas de novo até 5 vezes.
 - **Rastreamento:** o contexto do trace (`traceparent`) atravessa as filas, então a Saga aparece como um trace só no New Relic.
 
-Contratos completos (envelopes, campos e exemplos) no [guia de integração](docs/contrato-provisorio-saga.md), e o fluxo de negócio passo a passo em [docs/fluxo-de-negocio.md](docs/fluxo-de-negocio.md).
+Contratos completos (envelopes, campos e exemplos) no [guia de integração](docs/guia-de-integracao-saga.md), e o fluxo de negócio passo a passo em [docs/fluxo-de-negocio.md](docs/fluxo-de-negocio.md).
 
 ## Como rodar localmente
 
@@ -133,7 +133,7 @@ Variaveis de ambiente configuraveis (ver `src/main/resources/application.yaml`):
 
 No cluster, o workflow de deploy grava essas variáveis no ConfigMap `execucao-service-config`: as URLs das filas e DLQs são montadas a partir de `SQS_BASE_URL` (variável de repositório opcional, padrão `https://sqs.us-east-1.amazonaws.com/381492182695`) e o consumidor, o publicador e as métricas das filas ficam ligados. As credenciais AWS vêm do perfil da instância, sem chaves no ConfigMap.
 
-Documentação da API (Swagger UI): `http://localhost:8080/swagger-ui.html`, com a especificação OpenAPI em `/v3/api-docs`. As rotas estão agrupadas em Catálogo, Estoque, Diagnóstico, Cotação e Execuções, com exemplos, códigos de resposta e erros no formato ProblemDetail. Agendar e cancelar execução não aparecem ali, porque chegam pela fila SQS `execucao-comandos` (ver o [guia de integração](docs/contrato-provisorio-saga.md)).
+Documentação da API (Swagger UI): `http://localhost:8080/swagger-ui.html`, com a especificação OpenAPI em `/v3/api-docs`. As rotas estão agrupadas em Catálogo, Estoque, Diagnóstico, Cotação e Execuções, com exemplos, códigos de resposta e erros no formato ProblemDetail. Agendar e cancelar execução não aparecem ali, porque chegam pela fila SQS `execucao-comandos` (ver o [guia de integração](docs/guia-de-integracao-saga.md)).
 
 Health check: `GET :8081/actuator/health`. Métricas Prometheus: `GET :8081/actuator/prometheus` (detalhes em [observabilidade](docs/observabilidade.md)).
 
@@ -144,7 +144,7 @@ Health check: `GET :8081/actuator/health`. Métricas Prometheus: `GET :8081/actu
 - [Observabilidade: métricas de negócio, pod, CPU e limites](docs/observabilidade.md)
 - [Collection do Postman com o fluxo completo](docs/execucao-service.postman_collection.json)
 - [Arquitetura do Execução Service e configuração das DLQs](docs/arquitetura-execucao.md)
-- [Guia de integração para OS Service e Billing: filas, mensagens, campos e HTTP](docs/contrato-provisorio-saga.md)
+- [Guia de integração para OS Service e Billing: filas, mensagens, campos e HTTP](docs/guia-de-integracao-saga.md)
 - [Diagrama geral da arquitetura da Fase 4 (os três serviços, bancos e comunicação)](docs/arquitetura-geral-fase4.md)
 - [ADRs da Fase 4: decisões de arquitetura P1 a P7](docs/decisoes-fase4/README.md)
 
@@ -154,10 +154,10 @@ Health check: `GET :8081/actuator/health`. Métricas Prometheus: `GET :8081/actu
 
 O JaCoCo mede a cobertura e o build (`./mvnw clean verify`) **falha se a cobertura de linhas ficar abaixo de 80%** (`jacoco.minimum.coverage` no `pom.xml`). O relatório HTML fica em `target/site/jacoco/index.html`.
 
-| Medida (08/11/2026) | Valor |
+| Medida (16/11/2026) | Valor |
 | --- | --- |
-| Testes automatizados (unitários + 5 cenários BDD) | 151 |
-| Cobertura de linhas (JaCoCo, usada no gate) | 94,1% |
+| Testes automatizados (unitários + 5 cenários BDD) | 154 |
+| Cobertura de linhas (JaCoCo, usada no gate) | 94,6% |
 | Cobertura de instruções (JaCoCo) | 93,8% |
 | Cobertura segundo o Sonar (linhas + branches) | [painel no SonarCloud](https://sonarcloud.io/project/overview?id=pisanohub_oficina-fiap-execucao-service) |
 
@@ -203,14 +203,7 @@ Para o Sonar e a cobertura **barrarem o merge**, o check `build-test` precisa se
 O serviço está funcional e coberto por testes. Resumo do que existe na `main`:
 
 - **API HTTP** (`/api/v1`): catálogo e estoque (listar, consultar, atualizar, inativar, repor e ajustar), diagnóstico com controle de versão, cotação de preços e fila de trabalho (listar com paginação, consultar, iniciar e concluir).
-- **Mensageria**: consumo de `AgendarExecucao` e `CancelarExecucao` e publicação dos resultados via outbox, ambos ligados por configuração (`SQS_CONSUMER_ENABLED` e `OUTBOX_PUBLISHER_ENABLED`) e ativos no deploy, que já aponta para as filas reais.
+- **Mensageria**: consumo de `AgendarExecucao` e `CancelarExecucao` e publicação dos resultados via outbox, ambos ligados por configuração (`SQS_CONSUMER_ENABLED` e `OUTBOX_PUBLISHER_ENABLED`) e ativos no deploy, que já aponta para as filas reais. Desde 09/11/2026 o serviço roda no cluster consumindo e publicando nas filas, com a permissão da LabRole confirmada para SQS e DynamoDB.
 - **Persistência**: DynamoDB, com agendamento, deduplicação e outbox numa única transação.
 - **Observabilidade**: métricas de negócio, filas e limites do container em Prometheus (porta 8081), traces OpenTelemetry com o contexto atravessando o SQS e logs em JSON correlacionados (`trace.id`, `os.id`, `saga.id`).
-- **Qualidade**: 151 testes, cobertura de 80% e análise do Sonar barrando o CI.
-
-Próximas etapas do serviço:
-
-- Alinhar com o grupo os contratos e a orquestração do cancelamento e do estorno.
-- Autenticação e autorização para operadores e serviços nas rotas `/api/v1`.
-- Validar o fluxo na AWS: permissão da LabRole para SQS e DynamoDB no cluster.
-- Dashboard e alertas no New Relic.
+- **Qualidade**: 154 testes, cobertura de 80% e análise do Sonar barrando o CI.

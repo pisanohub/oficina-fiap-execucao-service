@@ -1,6 +1,6 @@
 # Como o Execução Service funciona
 
-Guia de leitura do código: o que o serviço faz, como recebe e publica mensagens, quais endpoints expõe e como tudo é persistido. Foi escrito a partir da implementação atual (branch `main`). Para os contratos detalhados de cada mensagem, veja [contrato-provisorio-saga.md](contrato-provisorio-saga.md); para o desenho de arquitetura e DLQs, veja [arquitetura-execucao.md](arquitetura-execucao.md).
+Guia de leitura do código: o que o serviço faz, como recebe e publica mensagens, quais endpoints expõe e como tudo é persistido. Foi escrito a partir da implementação atual (branch `main`). Para os contratos detalhados de cada mensagem, veja [guia-de-integracao-saga.md](guia-de-integracao-saga.md); para o desenho de arquitetura e DLQs, veja [arquitetura-execucao.md](arquitetura-execucao.md).
 
 ## 1. Visão geral
 
@@ -32,7 +32,7 @@ flowchart LR
 
 ## 2. Stack e estrutura do código
 
-Java 21, Spring Boot 4.0.5, AWS SDK v2 (DynamoDB e SQS), Maven, JaCoCo. O Swagger vem do springdoc-openapi 3.x (compatível com o Spring Boot 4); o pom também declara Lombok e Validation, que o código atual não utiliza (ver [seção 11](#11-lacunas-e-pontos-de-atenção)). O Resilience4j foi removido, porque o serviço não faz chamadas síncronas a outros serviços.
+Java 21, Spring Boot 4.0.5, AWS SDK v2 (DynamoDB e SQS), Maven, JaCoCo. O Swagger vem do springdoc-openapi 3.x (compatível com o Spring Boot 4). O Resilience4j foi removido, porque o serviço não faz chamadas síncronas a outros serviços.
 
 Arquitetura em camadas, estilo hexagonal (`br.com.fiap.soat15.execucaoservice`):
 
@@ -285,7 +285,7 @@ Fluxo típico de uma OS:
 5. Mecânico: `POST /execucoes/{osId}/inicio` → `ExecucaoIniciada`; depois `POST /execucoes/{osId}/conclusao` → `ExecucaoConcluida`.
 6. Se o cliente desistir antes do início, o OS envia `CancelarExecucao` → `ExecucaoCancelada` (peças devolvidas) ou `CancelamentoExecucaoRecusado`.
 
-Compensação (saga): o `ExecucaoRejeitada` e o `ExecucaoCancelada` são os sinais que o OS Service usa para disparar estorno/compensação. A ordem entre cancelamento e estorno e a regra para cancelar execução inexistente ainda estão **em aberto** com o grupo.
+Compensação (saga): o `ExecucaoRejeitada` e o `ExecucaoCancelada` são os sinais que o OS Service usa para disparar estorno/compensação.
 
 ## 9. Configuração
 
@@ -330,28 +330,12 @@ curl -X POST localhost:8080/api/v1/cotacoes -H 'Content-Type: application/json' 
   -d '{"itens":[{"tipo":"PECA","itemId":"filtro-oleo","quantidade":1}]}'
 ```
 
-Para criar a execução é preciso enviar um `AgendarExecucao` na fila `execucao-comandos` (veja o exemplo em [contrato-provisorio-saga.md](contrato-provisorio-saga.md)).
+Para criar a execução é preciso enviar um `AgendarExecucao` na fila `execucao-comandos` (veja o exemplo em [guia-de-integracao-saga.md](guia-de-integracao-saga.md)).
 
 ## 10. Infraestrutura, CI/CD e testes
 
 - **Terraform** (`terraform/`): definição da tabela `execucao_service`. As filas `execucao-comandos` e `execucao-resultados`, com suas DLQs (visibilidade 30 s, `maxReceiveCount = 5`), pertencem ao repositório de infraestrutura (`oficina-fiap-infra-k8s`) e já existem na AWS.
 - **CI** (`ci.yml`): em push/PR para `main`, uma etapa roda `./mvnw clean verify` (testes e trava de 80% de cobertura de linhas do JaCoCo) e a análise do SonarCloud com `-Dsonar.qualitygate.wait=true`, então o job falha se a cobertura cair ou se o quality gate reprovar. Só o secret `SONAR_TOKEN` é necessário. **Terraform** (`terraform-check.yml`): `fmt`, `init` e `validate` quando `terraform/**` muda.
-- **CD** (`deploy.yml`): em push na `main`, builda a imagem (Dockerfile multi-stage Maven → JDK 21 Alpine), publica em `ghcr.io` e aplica no Kubernetes (`namespace oficina-ms`, 1 réplica, Service `ClusterIP` na porta 8080, probes de readiness/liveness no Actuator).
-- **Testes** (`src/test`, 130 testes, 93,4% de cobertura de linhas): unitários (consumer, repositórios DynamoDB, publisher, métricas, `ExecucaoService`, controllers e validação dos contratos) e **4 cenários BDD** em Cucumber, que sobem a aplicação inteira com DynamoDB Local e ElasticMQ em containers e exigem Docker. Os cenários estão em `src/test/resources/features/execucao.feature`.
-
-## 11. Lacunas e pontos de atenção
-
-Itens que você citou como pendentes, mais o que a análise do código mostrou:
-
-**Pendentes já conhecidos**
-
-- **Métricas e observabilidade:** só existe `health` e `info` no Actuator. O `ConfigMap` do deploy já define variáveis `OTEL_*` (New Relic), mas o `pom.xml` não tem nenhum agente/starter OpenTelemetry nem Micrometer registry, então hoje elas não têm efeito. Também não há logs estruturados, nem correlação por `sagaId`/`osId` (os logs atuais são mensagens simples).
-- **Proteção das rotas:** nenhuma rota tem autenticação ou autorização. Falta definir com o grupo como operador e serviços (OS, Billing) se autenticam e como isso se encaixa no Gateway.
-
-**Observados no código**
-
-- O deploy (`deploy.yml`) não define `SQS_*` nem `OUTBOX_*` no ConfigMap. Então, **como está, o pod sobe com consumidor e publicador desligados** e o serviço não processa nem publica nada via SQS. É preciso adicionar as URLs das filas e as flags.
-- Validation e Lombok estão no `pom.xml` sem uso no código (os controllers não usam Bean Validation). Ou usa, ou tira do pom.
-- `Scan` na outbox e na listagem de execuções sem `limite`, e na listagem do catálogo (sem paginação, ordenada em memória). A listagem de execuções já aceita paginação; o índice foi avaliado e fica para quando o volume crescer.
-- A cobertura de 80% e o quality gate do Sonar já barram o CI. Para barrarem o **merge**, o check `build-test` precisa ser marcado como obrigatório na `main` (a cargo do Pedro). O BDD já cobre o fluxo ponta a ponta (agendar, iniciar, concluir, rejeitar e cancelar).
-- Decisões em aberto com o grupo: quando a OS passa a `EM_EXECUCAO`, quem gera o `sagaId`, resposta para cancelamento de execução inexistente e ordem cancelamento/estorno.
+- **CD** (`deploy.yml`): em push na `main`, builda a imagem (Dockerfile multi-stage Maven → JDK 21 Alpine), publica em `ghcr.io` e aplica no Kubernetes (`namespace oficina-ms`, 1 réplica, Service `ClusterIP` na porta 8080, probes de readiness/liveness no Actuator). O ConfigMap traz as URLs das filas e liga o consumidor, o publicador e as métricas das filas; o pod reinicia quando a configuração muda.
+- **New Relic** (`newrelic.yml`): workflow manual que instala o `nri-bundle` no cluster. O dashboard e os alertas ficam em `observability/newrelic/` (ver [observabilidade.md](observabilidade.md)).
+- **Testes** (`src/test`, 154 testes, 94,6% de cobertura de linhas em 16/11/2026): unitários (consumer, repositórios DynamoDB, publisher, métricas, observabilidade, `ExecucaoService`, controllers, OpenAPI e validação dos contratos) e **5 cenários BDD** em Cucumber, que sobem a aplicação inteira com DynamoDB Local e ElasticMQ em containers e exigem Docker. Os cenários estão em `src/test/resources/features/execucao.feature`.

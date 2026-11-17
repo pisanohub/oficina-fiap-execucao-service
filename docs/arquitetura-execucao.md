@@ -1,12 +1,12 @@
 # Arquitetura do Execução Service
 
-Este documento descreve a implementação disponível na `main` e as integrações propostas para a Fase 4. Os contratos entre serviços e a infraestrutura compartilhada ainda precisam ser validados pelo grupo. Para campos, exemplos HTTP e mensagens, consulte o [contrato provisório da Saga](contrato-provisorio-saga.md).
+Este documento descreve a implementação disponível na `main` e as integrações do Execução Service na Fase 4. Para campos, exemplos HTTP e mensagens, consulte o [guia de integração da Saga](guia-de-integracao-saga.md).
 
 ## Contexto e responsabilidades
 
 O `oficina_fiap` é o monólito de referência. Na divisão em serviços, o OS Service é responsável pelo ciclo da ordem de serviço e pela orquestração; o Billing Service cuida do orçamento e pagamento; o Execução Service mantém diagnóstico, catálogo, estoque e execução do trabalho. O Execução Service não altera o banco ou o status da OS diretamente.
 
-No monólito, as mudanças de status e a manipulação dos itens ocorrem dentro da mesma aplicação. Na arquitetura distribuída, cada serviço persiste seus dados e se comunica por HTTP ou mensagens. O desenho abaixo mostra responsabilidades e integrações propostas; a disponibilidade das integrações nos outros serviços deve ser verificada com seus responsáveis.
+No monólito, as mudanças de status e a manipulação dos itens ocorrem dentro da mesma aplicação. Na arquitetura distribuída, cada serviço persiste seus dados e se comunica por HTTP ou mensagens. O desenho abaixo mostra as responsabilidades e as integrações.
 
 ```mermaid
 flowchart LR
@@ -33,7 +33,7 @@ O Billing não chama o Execução: pelo ADR-P4, o OS guarda o preço de cada ite
 5. O operador inicia e conclui o trabalho pelas rotas HTTP; Execução registra `EM_EXECUCAO` e depois `CONCLUIDA`, publicando os respectivos eventos.
 6. O OS recebe os eventos e decide a transição do estado da OS. A entrega do veículo pertence ao fluxo da OS.
 
-O grupo ainda precisa decidir em que momento a OS muda para `EM_EXECUCAO`: o desenho informado coloca a OS nesse estado após o pagamento, enquanto no monólito esse estado marca o início do trabalho. O estado da execução é próprio do Execução Service.
+A OS passa para `EM_EXECUCAO` quando o OS envia o `AgendarExecucao`, sem esperar a confirmação (decisão do grupo em 07/11/2026, registrada no event storming da Saga). O `ExecucaoIniciada` continua sendo publicado pelo Execução, mas não muda o estado da OS. O estado da execução é próprio do Execução Service.
 
 ## Organização do código
 
@@ -83,13 +83,13 @@ O consumidor SQS processa `AgendarExecucao` e `CancelarExecucao`. A mensagem só
 
 A outbox é um registro de eventos no DynamoDB. Um publicador procura eventos pendentes, reserva cada registro temporariamente e o envia para `execucao-resultados`. Após o SQS confirmar o envio, o evento é marcado como publicado. Se o envio for confirmado pelo SQS e a marcação no DynamoDB falhar, uma nova tentativa pode gerar duplicata. O consumidor deve tratar duplicatas; a ordem de entrega entre eventos também não é garantida.
 
-`operationId` deve permanecer igual em tentativas da mesma operação e ser diferente para operações distintas. O formato exato dos envelopes e a política de consumo pelo OS estão no [contrato](contrato-provisorio-saga.md).
+`operationId` deve permanecer igual em tentativas da mesma operação e ser diferente para operações distintas. O formato exato dos envelopes e a política de consumo pelo OS estão no [contrato](guia-de-integracao-saga.md).
 
 ## HTTP e acesso
 
 As rotas usam o prefixo `/api/v1` para catálogo, diagnóstico, cotação e fila de trabalho. Elas estão listadas no contrato, com exemplos de requisição e resposta. O Actuator (`/actuator/health` e `/actuator/prometheus`) fica na porta de gerenciamento 8081, separada da API; as métricas estão em [observabilidade.md](observabilidade.md).
 
-A autenticação e a autorização de operadores e serviços ainda precisam ser implementadas e alinhadas com o Gateway e a solução de autenticação do grupo. O prefixo da rota, por si só, não aplica controle de acesso.
+As rotas `/api/v1` não exigem autenticação no serviço.
 
 ## Execução local e configuração
 
@@ -97,14 +97,13 @@ O mesmo código é usado localmente e no ambiente do grupo. URLs de DynamoDB e S
 
 A suíte automatizada é executada com `./mvnw clean verify`. O fluxo foi exercitado com DynamoDB e SQS locais chamando os componentes do serviço; isso não comprova, por si só, a integração entre os microsserviços implantados ou a proteção das rotas HTTP.
 
-## Limitações e decisões pendentes
+## Limitações conhecidas
 
 - Consulta da fila de trabalho e busca da outbox fazem `Scan` na tabela. A listagem de execuções aceita paginação opcional (`limite` e `pagina`); o índice secundário foi avaliado (ver [funcionamento-do-servico.md](funcionamento-do-servico.md)) e fica para quando o volume crescer.
-- O consumidor e o publicador são desabilitados por padrão na aplicação. O deploy (`.github/workflows/deploy.yml`) já configura as URLs das quatro filas e liga o consumidor, o publicador e as métricas das filas; falta confirmar na prática que a LabRole do nó tem permissão de SQS e DynamoDB.
-- A sincronização do status da OS e os contratos de mensagens precisam de validação conjunta. As quatro filas já existem na AWS (criadas pelo Pedro).
-- A ordem do cancelamento e do estorno, e a resposta para cancelamento sem execução existente, permanecem para acordo com o grupo.
+- O consumidor e o publicador são desabilitados por padrão na aplicação. O deploy (`.github/workflows/deploy.yml`) configura as URLs das quatro filas e liga o consumidor, o publicador e as métricas das filas. Desde 09/11/2026 o serviço roda assim no cluster, sem nenhum erro de permissão.
+- Cancelamento de execução inexistente é tratado como erro: o comando vai para a DLQ, sem evento de resposta.
 - Cancelamento após início do trabalho e tratamento de peças já utilizadas não fazem parte da regra atual.
-- As políticas de acesso precisam ser verificadas no ambiente compartilhado: o pod usa as credenciais do perfil da instância EC2 (`LabInstanceProfile`), sem chaves estáticas. Um `AccessDenied` nos logs do deploy indica falta de permissão da LabRole.
+- O pod usa as credenciais do perfil da instância EC2 (`LabInstanceProfile`), sem chaves estáticas. A permissão da LabRole para SQS e DynamoDB foi confirmada em 09/11/2026; um `AccessDenied` nos logs do deploy indicaria que ela mudou.
 
 ## Filas e DLQs
 

@@ -1,7 +1,7 @@
 # Guia de integração com o Execução Service
 
 **Para quem é:** Gabriel Souza (OS Service / orquestrador da Saga) e Gabriel Ramos (Billing Service).
-**Status:** contrato **provisório**, implementado no Execução Service e ainda a validar com os dois. Tudo o que está aqui descreve o que o código **já faz hoje**; os pontos em aberto estão na [última seção](#10-pontos-em-aberto-para-validar).
+**Status:** contrato implementado no Execução Service. Tudo o que está aqui descreve o que o código faz hoje.
 
 Este documento responde, para quem vai chamar o Execução: **o que enviar, para onde, em que formato, o que cada campo significa, o que volta e o que acontece quando algo dá errado.** Para a visão interna do serviço, veja [funcionamento-do-servico.md](funcionamento-do-servico.md) e [arquitetura-execucao.md](arquitetura-execucao.md).
 
@@ -256,7 +256,7 @@ Reenviar o mesmo `operationId` não devolve estoque de novo nem gera outro event
 
 ### Quando **não** há resposta (nova tentativa → DLQ)
 
-- **Execução inexistente** para a `osId` (por exemplo, o agendamento foi rejeitado ou nunca chegou). Hoje isso é tratado como erro, não como "nada a cancelar". Ver [pontos em aberto](#10-pontos-em-aberto-para-validar).
+- **Execução inexistente** para a `osId` (por exemplo, o agendamento foi rejeitado ou nunca chegou). Isso é tratado como erro, não como "nada a cancelar".
 - `sagaId` diferente do da execução.
 - `operationId` reutilizado com `osId` ou `sagaId` diferentes.
 - JSON inválido ou falha técnica.
@@ -380,7 +380,6 @@ Significado dos campos do payload: `orcamentoId`, `versao` e `pagamentoId` repet
 
 - **Local:** `http://localhost:8080`. **No cluster:** serviço `execucao-service` no namespace `oficina-ms`, porta `8080` (`http://execucao-service.oficina-ms:8080`, `ClusterIP`, acessível só dentro do cluster).
 - Corpo e resposta em JSON (`Content-Type: application/json`).
-- **Autenticação:** ainda não implementada; será combinada com o Gateway.
 - **Erros** vêm em formato `ProblemDetail`, por exemplo `{"status":404,"detail":"Diagnóstico não encontrado para a OS 123"}`. Códigos: `400` dados inválidos, `404` não encontrado, `409` conflito.
 
 ### OS Service: ler o diagnóstico
@@ -483,26 +482,3 @@ Passo a passo para validar o fluxo de ponta a ponta com o Execução rodando:
 9. **Conclusão:** em uma execução em andamento, `POST .../conclusao`. Esperado: `ExecucaoConcluida`.
 
 Lembrete: o consumo de comandos e a publicação de eventos só funcionam quando o Execução está com `SQS_CONSUMER_ENABLED=true`, `OUTBOX_PUBLISHER_ENABLED=true` e as URLs das filas configuradas.
-
----
-
-## 10. Pontos em aberto para validar
-
-Perguntas ao **Gabriel Souza (OS Service):**
-
-1. Confirmar que o OS preenche e envia o `sagaId` em todos os comandos, e que é o mesmo do início ao fim da Saga.
-2. Como será o `operationId` do agendamento e do cancelamento (o padrão sugerido está na seção 2)?
-3. Quando a OS passa para `EM_EXECUCAO`: após o pagamento ou ao receber `ExecucaoIniciada`? O Execução publica `ExecucaoIniciada` quando o mecânico começa.
-4. Cancelamento de execução **inexistente**: preferem que o Execução responda algo (por exemplo, "nada a cancelar") em vez de falhar e ir para a DLQ?
-5. Ordem entre cancelamento da execução e estorno do pagamento na compensação.
-6. O OS vai deduplicar os eventos por `messageId` e tolerar ordem trocada?
-
-Perguntas ao **Gabriel Ramos (Billing):**
-
-1. O Billing consulta `POST /cotacoes` ao gerar o orçamento e congela os preços? Há uma nova versão de orçamento quando o diagnóstico muda?
-2. Quem informa ao OS os itens aprovados que vão no `AgendarExecucao`: os mesmos da cotação?
-
-Perguntas à infraestrutura (**Pedro**):
-
-1. Permissões da LabRole para os pods (DynamoDB e SQS) e como o OS acessa as filas do Execução.
-2. Como o tráfego HTTP entre OS/Billing e o Execução será roteado e autenticado (Gateway).

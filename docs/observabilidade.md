@@ -90,7 +90,7 @@ Para ver as métricas de fila, suba a aplicação com `SQS_METRICS_ENABLED=true`
 
 ### No New Relic (sugestões)
 
-As consultas abaixo são ponto de partida e **precisam ser conferidas na conta do grupo** (nomes e tipos dependem de como o `nri-prometheus` converte cada métrica).
+As consultas abaixo usam os nomes que o `nri-prometheus` gera a partir das métricas Prometheus.
 
 Desfechos da execução por tipo, ao longo do tempo:
 
@@ -154,7 +154,7 @@ As condições efetivamente provisionadas estão em `observability/newrelic/aler
 | `OTEL_SERVICE_NAME`, `DEPLOYMENT_ENVIRONMENT` | `execucao-service`, `production` | Atributos do recurso nos traces |
 | `TRACING_SAMPLING_PROBABILITY` | `1.0` | Fração de traces amostrados |
 
-A consulta às filas precisa da permissão `sqs:GetQueueAttributes` nas quatro filas (a LabRole deve cobrir, mas convém confirmar com o Pedro).
+A consulta às filas precisa da permissão `sqs:GetQueueAttributes` nas quatro filas. A LabRole cobre essa permissão: confirmado no cluster em 09/11/2026.
 
 ## Traces distribuídos
 
@@ -204,7 +204,7 @@ O consumidor (`AgendarExecucaoConsumer`) e o publicador (`OutboxPublisher`) só 
 - **Exportação:** com o profile `newrelic`, os traces vão por OTLP para `https://otlp.nr-data.net/v1/traces` com a license key (`application-newrelic.yaml`, igual ao do `oficina_fiap`). Sem o profile e sem endpoint configurado, nada é exportado.
 - **Amostragem:** `TRACING_SAMPLING_PROBABILITY` (padrão 1.0, ou seja, todos os traces).
 
-Para o trace atravessar de verdade os serviços, o **OS Service precisa enviar o atributo `traceparent` nos comandos e lê-lo nos eventos** (ver o [guia de integração](contrato-provisorio-saga.md)).
+Para o trace atravessar de verdade os serviços, o **OS Service precisa enviar o atributo `traceparent` nos comandos e lê-lo nos eventos** (ver o [guia de integração](guia-de-integracao-saga.md)).
 
 ## Logs
 
@@ -332,8 +332,3 @@ Os limites são um ponto de partida para o volume da demonstração; ajuste em `
 
 - Os nomes dos atributos vêm do `nri-prometheus` (nomes Prometheus como estão) e da integração Kubernetes (`K8sContainerSample`). Se algum widget aparecer vazio, confira o nome no Data explorer: em especial os de histograma (`_sum`, `_count`, `_max`, `_bucket` com `bucketPercentile`) e os de throttling de CPU (`containerCpuCfs*`).
 - `oficina_execucao_fila_mensagens` só existe com `SQS_METRICS_ENABLED=true` e as URLs das filas no ConfigMap; sem isso, o widget e o alerta de DLQ ficam sem dados.
-
-## O que ainda não está feito
-
-- **Validar no cluster** que a LabRole permite ler as filas (`sqs:GetQueueAttributes`), sem o que o widget e o alerta de DLQ ficam sem dados. O deploy já liga as métricas de fila (`SQS_METRICS_ENABLED=true`).
-- **Destino de notificação** dos alertas (Workflow no New Relic), que depende de onde o grupo quer receber os avisos.

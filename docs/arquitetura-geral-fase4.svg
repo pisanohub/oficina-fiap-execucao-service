@@ -40,8 +40,6 @@
     <line x1="230" y1="65" x2="298" y2="65" marker-end="url(#seta-azul)"/>
     <line x1="522" y1="65" x2="598" y2="65" marker-start="url(#seta-azul)" marker-end="url(#seta-azul)"/>
     <path d="M410,100 V125 H215 V198" marker-end="url(#seta-azul)"/>
-    <path d="M410,125 H620 V198" stroke-dasharray="6 4" marker-end="url(#seta-azul)"/>
-    <path d="M620,125 H1000 V198" stroke-dasharray="6 4" marker-end="url(#seta-azul)"/>
     <line x1="1150" y1="102" x2="1150" y2="198" marker-start="url(#seta-azul)" marker-end="url(#seta-azul)"/>
     <line x1="380" y1="275" x2="453" y2="275" marker-end="url(#seta-azul)"/>
   </g>
@@ -49,7 +47,6 @@
     <text x="252" y="58">HTTPS</text>
     <text x="532" y="58">valida JWT</text>
     <text x="222" y="119">REST /api (rota da Fase 3)</text>
-    <text x="700" y="119">rotas para Billing e Execução a definir</text>
     <text x="1158" y="140">checkout,</text>
     <text x="1158" y="154">consulta,</text>
     <text x="1158" y="168">webhook</text>
@@ -150,12 +147,10 @@
   <g font-size="11.5" fill="#5b6472">
     <line x1="30" y1="855" x2="70" y2="855" stroke="#1f5fa8" stroke-width="1.6"/>
     <text x="78" y="859">HTTP/REST</text>
-    <line x1="170" y1="855" x2="210" y2="855" stroke="#1f5fa8" stroke-width="1.6" stroke-dasharray="6 4"/>
-    <text x="218" y="859">REST previsto, rota ainda a definir</text>
-    <line x1="430" y1="855" x2="470" y2="855" stroke="#b8620e" stroke-width="1.8"/>
-    <text x="478" y="859">SQS: publica e consome (comandos do OS, eventos dos participantes)</text>
-    <line x1="880" y1="855" x2="920" y2="855" stroke="#5b6472" stroke-width="1.6"/>
-    <text x="928" y="859">banco próprio (nenhum serviço acessa o de outro)</text>
+    <line x1="170" y1="855" x2="210" y2="855" stroke="#b8620e" stroke-width="1.8"/>
+    <text x="218" y="859">SQS: publica e consome (comandos do OS, eventos dos participantes)</text>
+    <line x1="640" y1="855" x2="680" y2="855" stroke="#5b6472" stroke-width="1.6"/>
+    <text x="688" y="859">banco próprio (nenhum serviço acessa o de outro)</text>
     <text x="30" y="884">os_service e billing_service: mesma instância RDS, databases e usuários separados (ADR-P2). Oficina FIAP · Fase 4 · 08/11/2026</text>
   </g>
 </svg>
